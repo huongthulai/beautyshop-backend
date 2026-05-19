@@ -2,11 +2,32 @@ const paymentService = require("../services/payment.service");
 
 const getPaymentsByOrderId = async (req, res) => {
   try {
-    const payments = await paymentService.getPaymentByOrderId(req.params.orderId);
+    const payments = await paymentService.getPaymentByOrderId(
+      req.params.orderId,
+      req.user
+    );
 
     return res.json({
       message: "Lấy danh sách thanh toán thành công",
       data: payments,
+    });
+  } catch (error) {
+    return res.status(404).json({
+      message: error.message,
+    });
+  }
+};
+
+const getPaymentInstructions = async (req, res) => {
+  try {
+    const instructions = await paymentService.getPaymentInstructions(
+      req.params.orderId,
+      req.user
+    );
+
+    return res.json({
+      message: "Lấy hướng dẫn thanh toán thành công",
+      data: instructions,
     });
   } catch (error) {
     return res.status(404).json({
@@ -47,6 +68,7 @@ const paymentCallback = async (req, res) => {
 
 module.exports = {
   getPaymentsByOrderId,
+  getPaymentInstructions,
   createPayment,
   paymentCallback,
 };

@@ -4,7 +4,45 @@ const Order = require("../models/Order");
 const ALLOWED_METHODS = ["cod", "bank_transfer", "momo", "vnpay"];
 const ALLOWED_CALLBACK_STATUS = ["success", "failed", "refunded"];
 
-const getPaymentByOrderId = async (orderId) => {
+const PAYMENT_DESTINATIONS = {
+  bank_transfer: {
+    accountName: process.env.PAYMENT_ACCOUNT_NAME || "BeautyShop",
+    accountNumber: process.env.PAYMENT_BANK_ACCOUNT || "0123456789",
+    bankName: process.env.PAYMENT_BANK_NAME || "Ngân hàng ACB",
+    branch: process.env.PAYMENT_BANK_BRANCH || "CN TP.HCM",
+    note: process.env.PAYMENT_NOTE || "Nội dung: Thanh toán đơn hàng BeautyShop",
+    providerLabel: "Chuyển khoản ngân hàng",
+  },
+  momo: {
+    accountName: process.env.PAYMENT_MOMO_NAME || "BeautyShop",
+    accountNumber: process.env.PAYMENT_MOMO_NUMBER || "0901234567",
+    providerLabel: "MoMo",
+    note: process.env.PAYMENT_NOTE || "Nội dung: Thanh toán đơn hàng BeautyShop",
+  },
+  vnpay: {
+    accountName: process.env.PAYMENT_VNPAY_NAME || "BeautyShop",
+    accountNumber: process.env.PAYMENT_VNPAY_NUMBER || "0901234567",
+    providerLabel: "VNPay",
+    note: process.env.PAYMENT_NOTE || "Nội dung: Thanh toán đơn hàng BeautyShop",
+  },
+};
+
+const getPaymentByOrderId = async (orderId, actor) => {
+  if (!orderId) {
+    throw new Error("Thiếu orderId");
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    throw new Error("Không tìm thấy đơn hàng");
+  }
+
+  const isAdmin = actor?.role && ["admin", "staff"].includes(actor.role);
+  const safeUserId = actor?.id || actor?._id;
+  if (!isAdmin && order.userId?.toString() !== String(safeUserId)) {
+    throw new Error("Bạn không có quyền truy cập thông tin thanh toán của đơn hàng này");
+  }
+
   const payments = await Payment.find({ orderId }).sort({ createdAt: -1 });
 
   if (!payments || payments.length === 0) {
@@ -30,6 +68,12 @@ const createPaymentForOrder = async (actor, payload) => {
     throw new Error("Không tìm thấy đơn hàng");
   }
 
+  const isAdmin = actor?.role && ["admin", "staff"].includes(actor.role);
+  const safeUserId = actor?.id || actor?._id;
+  if (!isAdmin && order.userId?.toString() !== String(safeUserId)) {
+    throw new Error("Bạn không có quyền thao tác thanh toán cho đơn hàng này");
+  }
+
   if (order.paymentStatus === "paid") {
     throw new Error("Đơn hàng đã được thanh toán");
   }
@@ -52,6 +96,59 @@ const createPaymentForOrder = async (actor, payload) => {
   }
 
   return payment;
+};
+
+const buildPaymentQrText = (method, amount) => {
+  const destination = PAYMENT_DESTINATIONS[method];
+  if (!destination) {
+    return "";
+  }
+
+  const formattedAmount = Number(amount || 0).toLocaleString("vi-VN");
+
+  if (method === "bank_transfer") {
+    return `Ngân hàng: ${destination.bankName}\nChi nhánh: ${destination.branch}\nChủ tài khoản: ${destination.accountName}\nSố tài khoản: ${destination.accountNumber}\nSố tiền: ${formattedAmount} đ\n${destination.note}`;
+  }
+
+  return `${destination.providerLabel}\nChủ tài khoản: ${destination.accountName}\nSố tài khoản / SĐT: ${destination.accountNumber}\nSố tiền: ${formattedAmount} đ\n${destination.note}`;
+};
+
+const getPaymentQrUrl = (method, amount) => {
+  const qrPayload = buildPaymentQrText(method, amount);
+  return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
+    qrPayload
+  )}`;
+};
+
+const getPaymentInstructions = async (orderId, actor) => {
+  if (!orderId) {
+    throw new Error("Thiếu orderId");
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    throw new Error("Không tìm thấy đơn hàng");
+  }
+
+  const isAdmin = actor?.role && ["admin", "staff"].includes(actor.role);
+  const safeUserId = actor?.id || actor?._id;
+  if (!isAdmin && order.userId?.toString() !== String(safeUserId)) {
+    throw new Error("Bạn không có quyền truy cập thông tin thanh toán của đơn hàng này");
+  }
+
+  const method = order.paymentMethod || "cod";
+  const amount = order.totalAmount;
+  const destination = PAYMENT_DESTINATIONS[method] || null;
+
+  return {
+    orderId: order._id,
+    paymentMethod: method,
+    paymentStatus: order.paymentStatus,
+    amount,
+    destination,
+    qrUrl: destination ? getPaymentQrUrl(method, amount) : null,
+    text: destination ? buildPaymentQrText(method, amount) : null,
+  };
 };
 
 const paymentCallback = async (payload) => {
@@ -148,5 +245,6 @@ const paymentCallback = async (payload) => {
 module.exports = {
   getPaymentByOrderId,
   createPaymentForOrder,
+  getPaymentInstructions,
   paymentCallback,
 };

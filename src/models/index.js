@@ -14,6 +14,7 @@ const Cart = require("./Cart");
 const Order = require("./Order");
 const Payment = require("./Payment");
 const Wishlist = require("./Wishlist");
+const Address = require("./Address");
 module.exports = {
   User,
   Role,
@@ -31,6 +32,7 @@ module.exports = {
   Order,
   Payment,
   Wishlist,
+  Address,
 };
 // shop
 // │

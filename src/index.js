@@ -21,6 +21,7 @@ const brandRoutes = require("./routes/brand.routes");
 const wishlistRoutes = require("./routes/wishlist.routes");
 const bannerRoutes = require("./routes/banner.routes");
 const voucherRoutes = require("./routes/voucher.routes");
+const addressRoutes = require("./routes/address.routes");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -46,6 +47,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/addresses", addressRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/brands", brandRoutes);
 app.use("/api/wishlist", wishlistRoutes);

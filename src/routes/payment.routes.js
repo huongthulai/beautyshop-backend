@@ -10,5 +10,10 @@ router.post("/callback", paymentController.paymentCallback);
 // User/Admin authenticated routes
 router.post("/", verifyToken, paymentController.createPayment);
 router.get("/order/:orderId", verifyToken, paymentController.getPaymentsByOrderId);
+router.get(
+  "/order/:orderId/instructions",
+  verifyToken,
+  paymentController.getPaymentInstructions
+);
 
 module.exports = router;
