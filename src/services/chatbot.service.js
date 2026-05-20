@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Order = require("../models/Order");
 const ChatMessage = require("../models/ChatMessage");
+const ChatKnowledge = require("../models/ChatKnowledge");
 
 const normalizeText = (text = "") =>
   text
@@ -21,7 +22,10 @@ const detectOrderCode = (message = "") => {
 
 const buildProductLink = (product) => `/products/${product.slug || product._id}`;
 
-const getProductKeyword = (message) => {
+const buildNeedAdminReply = () =>
+  "Mình chưa có câu trả lời chính xác cho câu hỏi này. Mình đã ghi nhận và nhân viên BeautyShop sẽ trả lời bạn sớm nhất tại khung chat này nhé.";
+
+const getProductKeyword = (message = "") => {
   const normalized = normalizeText(message);
 
   const keywordMap = [
@@ -46,9 +50,6 @@ const getProductKeyword = (message) => {
     .trim();
 };
 
-const buildNeedAdminReply = () =>
-  "Mình chưa có câu trả lời chính xác cho câu hỏi này. Mình đã ghi nhận và nhân viên BeautyShop sẽ trả lời bạn sớm nhất tại khung chat này nhé.";
-
 const suggestProducts = async (message) => {
   const keyword = getProductKeyword(message);
   const safeKeyword = escapeRegex(keyword);
@@ -71,15 +72,19 @@ const suggestProducts = async (message) => {
       status: "need_admin",
       reply:
         "Mình chưa tìm thấy sản phẩm thật phù hợp với từ khóa này. Mình đã chuyển câu hỏi cho nhân viên để tư vấn kỹ hơn cho bạn nhé.",
-      metadata: { keyword, products: [] },
+      metadata: {
+        keyword,
+        products: [],
+      },
     };
   }
 
   const productLines = products
     .map((item, index) => {
-      const price = Number(item.finalPrice || item.originalPrice || 0).toLocaleString(
-        "vi-VN"
-      );
+      const price = Number(
+        item.finalPrice || item.originalPrice || 0
+      ).toLocaleString("vi-VN");
+
       return `${index + 1}. ${item.name} - ${price}đ\n${buildProductLink(item)}`;
     })
     .join("\n\n");
@@ -126,7 +131,9 @@ const lookupOrder = async ({ userId, message }) => {
       status: "need_admin",
       reply:
         "Mình chưa tìm thấy đơn hàng này. Mình đã ghi nhận để nhân viên kiểm tra lại giúp bạn. Bạn cũng có thể kiểm tra lại mã đơn hoặc đăng nhập đúng tài khoản đã đặt hàng nhé.",
-      metadata: { orderCode },
+      metadata: {
+        orderCode,
+      },
     };
   }
 
@@ -151,6 +158,72 @@ const lookupOrder = async ({ userId, message }) => {
       fulfillmentStatus: order.fulfillmentStatus,
       paymentStatus: order.paymentStatus,
       totalAmount: order.totalAmount,
+    },
+  };
+};
+
+const findKnowledgeReply = async (message) => {
+  const normalizedMessage = normalizeText(message);
+
+  const knowledgeItems = await ChatKnowledge.find({
+    isActive: true,
+  })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const item of knowledgeItems) {
+    let score = 0;
+
+    const keywords = item.keywords || [];
+
+    for (const keyword of keywords) {
+      const normalizedKeyword = normalizeText(keyword);
+
+      if (!normalizedKeyword) continue;
+
+      if (normalizedMessage.includes(normalizedKeyword)) {
+        score += 3;
+      }
+    }
+
+    const normalizedQuestion = normalizeText(item.question || "");
+
+    if (normalizedQuestion && normalizedMessage.includes(normalizedQuestion)) {
+      score += 5;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = item;
+    }
+  }
+
+  if (!bestMatch || bestScore <= 0) {
+    return null;
+  }
+
+  const categoryToIntentMap = {
+    policy: "policy",
+    payment: "policy",
+    shipping: "policy",
+    order: "order_lookup",
+    product_advice: "product_suggestion",
+    skin_care: "product_suggestion",
+    general: "general",
+  };
+
+  return {
+    intent: categoryToIntentMap[bestMatch.category] || "general",
+    status: "bot_answered",
+    reply: bestMatch.answer,
+    metadata: {
+      knowledgeId: bestMatch._id,
+      knowledgeCategory: bestMatch.category,
+      matchedKeywords: bestMatch.keywords || [],
+      score: bestScore,
     },
   };
 };
@@ -186,6 +259,7 @@ const handleChat = async ({ userId = null, sessionId = null, message }) => {
   }
 
   const normalized = normalizeText(text);
+
   const hasOrderIntent =
     normalized.includes("don hang") ||
     normalized.includes("ma don") ||
@@ -214,12 +288,27 @@ const handleChat = async ({ userId = null, sessionId = null, message }) => {
   } else {
     const policyReply = getPolicyReply(text);
 
-    result = {
-      intent: policyReply ? "policy" : "general",
-      status: policyReply ? "bot_answered" : "need_admin",
-      reply: policyReply || buildNeedAdminReply(),
-      metadata: {},
-    };
+    if (policyReply) {
+      result = {
+        intent: "policy",
+        status: "bot_answered",
+        reply: policyReply,
+        metadata: {},
+      };
+    } else {
+      const knowledgeReply = await findKnowledgeReply(text);
+
+      if (knowledgeReply) {
+        result = knowledgeReply;
+      } else {
+        result = {
+          intent: "general",
+          status: "need_admin",
+          reply: buildNeedAdminReply(),
+          metadata: {},
+        };
+      }
+    }
   }
 
   const savedMessage = await ChatMessage.create({
@@ -228,16 +317,16 @@ const handleChat = async ({ userId = null, sessionId = null, message }) => {
     userMessage: text,
     botReply: result.reply,
     intent: result.intent,
-    status: result.status,
-    metadata: result.metadata,
+    status: result.status || "bot_answered",
+    metadata: result.metadata || {},
   });
 
   return {
     id: savedMessage._id,
     reply: result.reply,
     intent: result.intent,
-    status: result.status,
-    metadata: result.metadata,
+    status: result.status || "bot_answered",
+    metadata: result.metadata || {},
     createdAt: savedMessage.createdAt,
   };
 };
@@ -254,6 +343,7 @@ const buildHistoryFilter = (query = {}) => {
 
   if (query.keyword) {
     const safeKeyword = escapeRegex(query.keyword.trim());
+
     filter.$or = [
       { userMessage: { $regex: safeKeyword, $options: "i" } },
       { botReply: { $regex: safeKeyword, $options: "i" } },
@@ -292,7 +382,12 @@ const getChatHistory = async (query = {}) => {
   };
 };
 
-const getUserChatHistory = async ({ userId = null, sessionId = null, page = 1, limit = 30 }) => {
+const getUserChatHistory = async ({
+  userId = null,
+  sessionId = null,
+  page = 1,
+  limit = 30,
+}) => {
   const safePage = Math.max(Number(page) || 1, 1);
   const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 100);
   const skip = (safePage - 1) * safeLimit;
@@ -302,7 +397,12 @@ const getUserChatHistory = async ({ userId = null, sessionId = null, page = 1, l
   if (!filter.userId && !filter.sessionId) {
     return {
       items: [],
-      pagination: { page: safePage, limit: safeLimit, total: 0, totalPages: 0 },
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total: 0,
+        totalPages: 0,
+      },
     };
   }
 
@@ -358,9 +458,162 @@ const replyChatMessage = async ({ messageId, adminId, reply }) => {
   return updated;
 };
 
+const createKnowledge = async (payload = {}) => {
+  const question = payload.question?.trim();
+  const answer = payload.answer?.trim();
+
+  if (!question) {
+    throw new Error("Vui lòng nhập câu hỏi mẫu");
+  }
+
+  if (!answer) {
+    throw new Error("Vui lòng nhập câu trả lời");
+  }
+
+  const keywords = Array.isArray(payload.keywords)
+    ? payload.keywords
+        .map((item) => item?.toString().trim())
+        .filter(Boolean)
+    : [];
+
+  const knowledge = await ChatKnowledge.create({
+    question,
+    answer,
+    keywords,
+    category: payload.category || "general",
+    isActive:
+      typeof payload.isActive === "boolean" ? payload.isActive : true,
+  });
+
+  return knowledge;
+};
+
+const getKnowledgeList = async (query = {}) => {
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+  const skip = (page - 1) * limit;
+
+  const filter = {};
+
+  if (query.category) {
+    filter.category = query.category;
+  }
+
+  if (query.isActive === "true") {
+    filter.isActive = true;
+  }
+
+  if (query.isActive === "false") {
+    filter.isActive = false;
+  }
+
+  if (query.keyword) {
+    const safeKeyword = escapeRegex(query.keyword.trim());
+
+    filter.$or = [
+      { question: { $regex: safeKeyword, $options: "i" } },
+      { answer: { $regex: safeKeyword, $options: "i" } },
+      { keywords: { $regex: safeKeyword, $options: "i" } },
+    ];
+  }
+
+  const [items, total] = await Promise.all([
+    ChatKnowledge.find(filter)
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    ChatKnowledge.countDocuments(filter),
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
+
+const updateKnowledge = async (knowledgeId, payload = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(knowledgeId)) {
+    throw new Error("Mã kiến thức không hợp lệ");
+  }
+
+  const updateData = {};
+
+  if (payload.question !== undefined) {
+    const question = payload.question?.trim();
+
+    if (!question) {
+      throw new Error("Câu hỏi mẫu không được để trống");
+    }
+
+    updateData.question = question;
+  }
+
+  if (payload.answer !== undefined) {
+    const answer = payload.answer?.trim();
+
+    if (!answer) {
+      throw new Error("Câu trả lời không được để trống");
+    }
+
+    updateData.answer = answer;
+  }
+
+  if (payload.keywords !== undefined) {
+    updateData.keywords = Array.isArray(payload.keywords)
+      ? payload.keywords
+          .map((item) => item?.toString().trim())
+          .filter(Boolean)
+      : [];
+  }
+
+  if (payload.category !== undefined) {
+    updateData.category = payload.category || "general";
+  }
+
+  if (payload.isActive !== undefined) {
+    updateData.isActive = Boolean(payload.isActive);
+  }
+
+  const updated = await ChatKnowledge.findByIdAndUpdate(
+    knowledgeId,
+    updateData,
+    { new: true }
+  ).lean();
+
+  if (!updated) {
+    throw new Error("Không tìm thấy kiến thức chatbot");
+  }
+
+  return updated;
+};
+
+const deleteKnowledge = async (knowledgeId) => {
+  if (!mongoose.Types.ObjectId.isValid(knowledgeId)) {
+    throw new Error("Mã kiến thức không hợp lệ");
+  }
+
+  const deleted = await ChatKnowledge.findByIdAndDelete(knowledgeId).lean();
+
+  if (!deleted) {
+    throw new Error("Không tìm thấy kiến thức chatbot");
+  }
+
+  return deleted;
+};
+
 module.exports = {
   handleChat,
   getChatHistory,
   getUserChatHistory,
   replyChatMessage,
+  createKnowledge,
+  getKnowledgeList,
+  updateKnowledge,
+  deleteKnowledge,
 };

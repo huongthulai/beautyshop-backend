@@ -83,9 +83,84 @@ const replyChatMessage = async (req, res) => {
   }
 };
 
+const createKnowledge = async (req, res) => {
+  try {
+    const data = await chatbotService.createKnowledge(req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: "Thêm kiến thức chatbot thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không thêm được kiến thức chatbot",
+    });
+  }
+};
+
+const getKnowledgeList = async (req, res) => {
+  try {
+    const data = await chatbotService.getKnowledgeList(req.query);
+
+    return res.json({
+      success: true,
+      message: "Lấy danh sách kiến thức chatbot thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không lấy được kiến thức chatbot",
+    });
+  }
+};
+
+const updateKnowledge = async (req, res) => {
+  try {
+    const data = await chatbotService.updateKnowledge(
+      req.params.knowledgeId,
+      req.body
+    );
+
+    return res.json({
+      success: true,
+      message: "Cập nhật kiến thức chatbot thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không cập nhật được kiến thức chatbot",
+    });
+  }
+};
+
+const deleteKnowledge = async (req, res) => {
+  try {
+    const data = await chatbotService.deleteKnowledge(req.params.knowledgeId);
+
+    return res.json({
+      success: true,
+      message: "Xóa kiến thức chatbot thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không xóa được kiến thức chatbot",
+    });
+  }
+};
+
 module.exports = {
   sendMessage,
   getChatHistory,
   getUserChatHistory,
   replyChatMessage,
+  createKnowledge,
+  getKnowledgeList,
+  updateKnowledge,
+  deleteKnowledge,
 };

@@ -31,4 +31,32 @@ router.post(
   chatbotController.replyChatMessage
 );
 
+router.get(
+  "/knowledge",
+  verifyToken,
+  requireRoles("admin", "staff"),
+  chatbotController.getKnowledgeList
+);
+
+router.post(
+  "/knowledge",
+  verifyToken,
+  requireRoles("admin", "staff"),
+  chatbotController.createKnowledge
+);
+
+router.put(
+  "/knowledge/:knowledgeId",
+  verifyToken,
+  requireRoles("admin", "staff"),
+  chatbotController.updateKnowledge
+);
+
+router.delete(
+  "/knowledge/:knowledgeId",
+  verifyToken,
+  requireRoles("admin", "staff"),
+  chatbotController.deleteKnowledge
+);
+
 module.exports = router;
