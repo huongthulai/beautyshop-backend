@@ -214,13 +214,20 @@ const orderSchema = new mongoose.Schema(
     },
 
     discountAmount: {
-      type: Number,
-      required: true,
-      min: 0,
-      default: 0,
-    },
+  type: Number,
+  required: true,
+  min: 0,
+  default: 0,
+},
 
-    totalAmount: {
+voucherCode: {
+  type: String,
+  default: null,
+  trim: true,
+  uppercase: true,
+},
+
+totalAmount: {
       type: Number,
       required: true,
       min: 0,

@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Voucher = require("../models/Voucher");
+const Product = require("../models/Product");
 
 const cleanObjectIdList = (list = []) => {
   if (!Array.isArray(list)) return [];
@@ -223,7 +224,51 @@ const deleteVoucher = async (id) => {
 
   return deleted;
 };
+const hasMatchingVoucherScope = async (voucher, cart = {}) => {
+  if (!voucher || voucher.applyScope === "all") return true;
 
+  const items = Array.isArray(cart.items) ? cart.items : [];
+  const productIds = items
+    .map((item) => item.productId?.toString())
+    .filter(Boolean);
+
+  if (!productIds.length) return false;
+
+  if (voucher.applyScope === "product") {
+    const allowedProductIds = (voucher.applicableProducts || [])
+      .map((id) => id.toString());
+
+    return productIds.some((productId) => allowedProductIds.includes(productId));
+  }
+
+  const products = await Product.find({
+    _id: { $in: productIds },
+  }).select("_id categoryId brandId");
+
+  if (voucher.applyScope === "category") {
+    const allowedCategoryIds = (voucher.applicableCategories || [])
+      .map((id) => id.toString());
+
+    return products.some((product) =>
+      product.categoryId
+        ? allowedCategoryIds.includes(product.categoryId.toString())
+        : false
+    );
+  }
+
+  if (voucher.applyScope === "brand") {
+    const allowedBrandIds = (voucher.applicableBrands || [])
+      .map((id) => id.toString());
+
+    return products.some((product) =>
+      product.brandId
+        ? allowedBrandIds.includes(product.brandId.toString())
+        : false
+    );
+  }
+
+  return false;
+};
 const validateVoucher = async ({ code, user, cart }) => {
   if (!code?.trim()) {
     throw new Error("Vui lòng nhập mã voucher");
@@ -265,14 +310,32 @@ const validateVoucher = async ({ code, user, cart }) => {
   }
 
   if (Number(cart?.subtotal || 0) < Number(voucher.minOrderValue || 0)) {
-    throw new Error(
-      `Đơn hàng chưa đạt giá trị tối thiểu ${Number(
-        voucher.minOrderValue || 0
-      ).toLocaleString("vi-VN")} đ`
-    );
+  throw new Error(
+    `Đơn hàng chưa đạt giá trị tối thiểu ${Number(
+      voucher.minOrderValue || 0
+    ).toLocaleString("vi-VN")} đ`
+  );
+}
+
+const matchScope = await hasMatchingVoucherScope(voucher, cart);
+
+if (!matchScope) {
+  if (voucher.applyScope === "product") {
+    throw new Error("Voucher không áp dụng cho các sản phẩm đã chọn");
   }
 
-  return voucher;
+  if (voucher.applyScope === "category") {
+    throw new Error("Voucher không áp dụng cho danh mục sản phẩm trong giỏ hàng");
+  }
+
+  if (voucher.applyScope === "brand") {
+    throw new Error("Voucher không áp dụng cho thương hiệu sản phẩm trong giỏ hàng");
+  }
+
+  throw new Error("Voucher không áp dụng cho đơn hàng này");
+}
+
+return voucher;
 };
 
 const calculateDiscount = (voucher, cart) => {

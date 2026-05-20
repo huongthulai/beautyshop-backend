@@ -36,10 +36,13 @@ const applyVoucher = async (req, res) => {
     );
 
     const voucher = await validateVoucher({
-      code,
-      user: req.user,
-      cart: { subtotal },
-    });
+  code,
+  user: req.user,
+  cart: {
+    subtotal,
+    items: selectedItems,
+  },
+});
 
     const discount = calculateDiscount(voucher, { subtotal });
 

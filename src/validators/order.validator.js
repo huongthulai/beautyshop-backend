@@ -17,6 +17,7 @@ const createOrderSchema = Joi.object({
     .optional(),
   shippingFee: Joi.number().min(0).optional(),
   discountAmount: Joi.number().min(0).optional(),
+  voucherCode: Joi.string().trim().uppercase().allow("", null).optional(),
   note: Joi.string().trim().allow("").optional(),
 });
 

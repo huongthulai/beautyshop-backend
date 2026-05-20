@@ -193,14 +193,19 @@ if (voucherCode?.trim()) {
   const voucher = await validateVoucher({
     code: voucherCode,
     user,
-    cart: { subtotal },
+    cart: {
+      subtotal,
+      items: orderItems,
+    },
   });
 
   finalDiscountAmount = calculateDiscount(voucher, {
     subtotal,
+    items: orderItems,
   });
+
   appliedVoucher = voucher;
-  voucher.usedCount += 1;
+  voucher.usedCount = Number(voucher.usedCount || 0) + 1;
   await voucher.save();
 }
   const totalAmount = Math.max(
