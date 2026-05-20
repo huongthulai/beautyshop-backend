@@ -22,6 +22,7 @@ const wishlistRoutes = require("./routes/wishlist.routes");
 const bannerRoutes = require("./routes/banner.routes");
 const voucherRoutes = require("./routes/voucher.routes");
 const addressRoutes = require("./routes/address.routes");
+const chatbotRoutes = require("./routes/chatbot.routes");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -53,7 +54,7 @@ app.use("/api/brands", brandRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/banners", bannerRoutes);
 app.use("/api/vouchers", voucherRoutes);
-
+app.use("/api/chatbot", chatbotRoutes);
 // Upload
 app.use("/uploads", express.static(path.resolve(__dirname, "../public/uploads")));
 app.use("/api/uploads", uploadRoutes);
