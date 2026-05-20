@@ -1,4 +1,12 @@
-const { validateVoucher, calculateDiscount } = require("../services/voucher.service");
+const {
+  createVoucher,
+  getVouchers,
+  getVoucherById,
+  updateVoucher,
+  deleteVoucher,
+  validateVoucher,
+  calculateDiscount,
+} = require("../services/voucher.service");
 const Cart = require("../models/Cart");
 
 const applyVoucher = async (req, res) => {
@@ -50,6 +58,96 @@ const applyVoucher = async (req, res) => {
   }
 };
 
+const createVoucherHandler = async (req, res) => {
+  try {
+    const data = await createVoucher(req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: "Tạo voucher thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không tạo được voucher",
+    });
+  }
+};
+
+const getVouchersHandler = async (req, res) => {
+  try {
+    const data = await getVouchers(req.query);
+
+    return res.json({
+      success: true,
+      message: "Lấy danh sách voucher thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không lấy được danh sách voucher",
+    });
+  }
+};
+
+const getVoucherByIdHandler = async (req, res) => {
+  try {
+    const data = await getVoucherById(req.params.id);
+
+    return res.json({
+      success: true,
+      message: "Lấy voucher thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(404).json({
+      success: false,
+      message: error.message || "Không tìm thấy voucher",
+    });
+  }
+};
+
+const updateVoucherHandler = async (req, res) => {
+  try {
+    const data = await updateVoucher(req.params.id, req.body);
+
+    return res.json({
+      success: true,
+      message: "Cập nhật voucher thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không cập nhật được voucher",
+    });
+  }
+};
+
+const deleteVoucherHandler = async (req, res) => {
+  try {
+    const data = await deleteVoucher(req.params.id);
+
+    return res.json({
+      success: true,
+      message: "Xóa voucher thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không xóa được voucher",
+    });
+  }
+};
+
 module.exports = {
   applyVoucher,
+  createVoucher: createVoucherHandler,
+  getVouchers: getVouchersHandler,
+  getVoucherById: getVoucherByIdHandler,
+  updateVoucher: updateVoucherHandler,
+  deleteVoucher: deleteVoucherHandler,
 };
