@@ -3,6 +3,8 @@ const Joi = require("joi");
 const addCartItemSchema = Joi.object({
   productId: Joi.string().trim().required(),
   qty: Joi.number().integer().min(1).required(),
+  volumeWeight: Joi.string().trim().optional().allow(""),
+  color: Joi.string().trim().optional().allow(""),
 });
 
 const updateCartItemSchema = Joi.object({

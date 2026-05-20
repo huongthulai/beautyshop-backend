@@ -45,7 +45,49 @@ const getCartByUser = async (userId) => {
   return cart;
 };
 
-const ensureProductCanBuy = async (productId, quantity) => {
+const normalizeVariantValue = (value = "") => String(value || "").trim();
+
+const hasOptions = (options) => Array.isArray(options) && options.length > 0;
+
+const validateProductVariantSelection = (product, { volumeWeight = "", color = "" } = {}) => {
+  const volumeOptions = Array.isArray(product.volumeWeightOptions)
+    ? product.volumeWeightOptions.map(normalizeVariantValue).filter(Boolean)
+    : [];
+
+  const colorOptions = Array.isArray(product.colorOptions)
+    ? product.colorOptions.map(normalizeVariantValue).filter(Boolean)
+    : [];
+
+  const finalVolumeWeight = normalizeVariantValue(volumeWeight);
+  const finalColor = normalizeVariantValue(color);
+
+  if (hasOptions(volumeOptions)) {
+    if (!finalVolumeWeight) {
+      throw new Error("Vui lòng chọn dung tích/khối lượng");
+    }
+
+    if (!volumeOptions.includes(finalVolumeWeight)) {
+      throw new Error("Dung tích/khối lượng không hợp lệ");
+    }
+  }
+
+  if (hasOptions(colorOptions)) {
+    if (!finalColor) {
+      throw new Error("Vui lòng chọn màu sắc/phân loại");
+    }
+
+    if (!colorOptions.includes(finalColor)) {
+      throw new Error("Màu sắc/phân loại không hợp lệ");
+    }
+  }
+
+  return {
+    volumeWeight: finalVolumeWeight,
+    color: finalColor,
+  };
+};
+
+const ensureProductCanBuy = async (productId, quantity, variant = {}) => {
   const product = await Product.findById(productId);
   if (!product) {
     throw new Error("Không tìm thấy sản phẩm");
@@ -54,6 +96,8 @@ const ensureProductCanBuy = async (productId, quantity) => {
   if (product.status !== "active") {
     throw new Error("Sản phẩm hiện không khả dụng");
   }
+
+  const normalizedVariant = validateProductVariantSelection(product, variant);
 
   const inventory = await Inventory.findOne({ productId });
   if (!inventory) {
@@ -64,10 +108,10 @@ const ensureProductCanBuy = async (productId, quantity) => {
     throw new Error(`Sản phẩm ${product.name} chỉ còn ${inventory.stock} trong kho`);
   }
 
-  return { product, inventory };
+  return { product, inventory, normalizedVariant };
 };
 
-const addItemToCart = async (userId, { productId, qty }) => {
+const addItemToCart = async (userId, { productId, qty, volumeWeight = "", color = "" }) => {
   const quantity = Number(qty);
 
   if (!productId) {
@@ -78,11 +122,19 @@ const addItemToCart = async (userId, { productId, qty }) => {
     throw new Error("Số lượng phải là số nguyên lớn hơn 0");
   }
 
-  const { product, inventory } = await ensureProductCanBuy(productId, quantity);
+  const { product, inventory, normalizedVariant } = await ensureProductCanBuy(productId, quantity, {
+    volumeWeight,
+    color,
+  });
+  const finalVolumeWeight = normalizedVariant.volumeWeight;
+  const finalColor = normalizedVariant.color;
   const cart = await getOrCreateCart(userId);
 
   const existingItem = cart.items.find(
-    (item) => item.productId.toString() === productId.toString()
+    (item) =>
+      item.productId.toString() === productId.toString() &&
+      item.volumeWeight === finalVolumeWeight &&
+      item.color === finalColor
   );
 
   if (existingItem) {
@@ -104,6 +156,8 @@ const addItemToCart = async (userId, { productId, qty }) => {
       salePercent: Number(product.salePercent) || 0,
       finalPrice: getProductActivePrice(product),
       price: getProductActivePrice(product),
+      volumeWeight: finalVolumeWeight,
+      color: finalColor,
       qty: quantity,
       lineTotal: getProductActivePrice(product) * quantity,
       isSelected: true,
@@ -116,7 +170,7 @@ const addItemToCart = async (userId, { productId, qty }) => {
   return cart;
 };
 
-const updateCartItem = async (userId, productId, { qty }) => {
+const updateCartItem = async (userId, itemId, { qty }) => {
   const quantity = Number(qty);
 
   if (!Number.isInteger(quantity) || quantity < 1) {
@@ -124,16 +178,16 @@ const updateCartItem = async (userId, productId, { qty }) => {
   }
 
   const cart = await getOrCreateCart(userId);
-
-  const item = cart.items.find(
-    (cartItem) => cartItem.productId.toString() === productId.toString()
-  );
+  const item = cart.items.id(itemId);
 
   if (!item) {
     throw new Error("Sản phẩm không có trong giỏ hàng");
   }
 
-  const { product } = await ensureProductCanBuy(productId, quantity);
+  const { product } = await ensureProductCanBuy(item.productId, quantity, {
+    volumeWeight: item.volumeWeight,
+    color: item.color,
+  });
 
   item.qty = quantity;
   syncCartItemWithProduct(item, product);
@@ -144,18 +198,15 @@ const updateCartItem = async (userId, productId, { qty }) => {
   return cart;
 };
 
-const removeCartItem = async (userId, productId) => {
+const removeCartItem = async (userId, itemId) => {
   const cart = await getOrCreateCart(userId);
+  const item = cart.items.id(itemId);
 
-  const itemIndex = cart.items.findIndex(
-    (item) => item.productId.toString() === productId.toString()
-  );
-
-  if (itemIndex === -1) {
+  if (!item) {
     throw new Error("Sản phẩm không có trong giỏ hàng");
   }
 
-  cart.items.splice(itemIndex, 1);
+  item.deleteOne();
 
   recalculateCart(cart);
   await cart.save();
@@ -177,12 +228,9 @@ const clearCart = async (userId) => {
   return cart;
 };
 
-const toggleSelectCartItem = async (userId, productId, { isSelected }) => {
+const toggleSelectCartItem = async (userId, itemId, { isSelected }) => {
   const cart = await getOrCreateCart(userId);
-
-  const item = cart.items.find(
-    (cartItem) => cartItem.productId.toString() === productId.toString()
-  );
+  const item = cart.items.id(itemId);
 
   if (!item) {
     throw new Error("Sản phẩm không có trong giỏ hàng");

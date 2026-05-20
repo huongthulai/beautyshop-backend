@@ -53,6 +53,18 @@ const cartItemSchema = new mongoose.Schema(
       min: 0,
     },
 
+    volumeWeight: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    color: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     qty: {
       type: Number,
       required: true,

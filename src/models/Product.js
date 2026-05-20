@@ -89,6 +89,16 @@ const productSchema = new mongoose.Schema(
       default: [],
     },
 
+    volumeWeightOptions: {
+      type: [String],
+      default: [],
+    },
+
+    colorOptions: {
+      type: [String],
+      default: [],
+    },
+
     status: {
       type: String,
       enum: ["draft", "active", "out_of_stock", "inactive", "archived"],

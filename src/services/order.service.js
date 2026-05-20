@@ -134,6 +134,8 @@ const buildOrderItemsFromSelectedCart = async (selectedItems) => {
       salePercent: Number(product.salePercent) || 0,
       finalPrice: unitPrice,
       price: unitPrice,
+      volumeWeight: cartItem.volumeWeight || "",
+      color: cartItem.color || "",
       qty: cartItem.qty,
       lineTotal,
     });
@@ -283,12 +285,12 @@ totalAmount,
     createdBy: user._id,
   });
 
-  const selectedProductIds = new Set(
-    selectedItems.map((item) => item.productId.toString())
+  const selectedCartItemIds = new Set(
+    selectedItems.map((item) => item._id?.toString()).filter(Boolean)
   );
 
   cart.items = cart.items.filter(
-    (item) => !selectedProductIds.has(item.productId.toString())
+    (item) => !selectedCartItemIds.has(item._id?.toString())
   );
 
   if (typeof cart.recalculateTotals === "function") {

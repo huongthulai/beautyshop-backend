@@ -60,7 +60,7 @@ const updateItem = async (req, res) => {
 
     const cart = await cartService.updateCartItem(
       req.user.id,
-      req.params.productId,
+      req.params.itemId,
       value
     );
 
@@ -77,7 +77,7 @@ const updateItem = async (req, res) => {
 
 const removeItem = async (req, res) => {
   try {
-    const cart = await cartService.removeCartItem(req.user.id, req.params.productId);
+    const cart = await cartService.removeCartItem(req.user.id, req.params.itemId);
 
     return res.json({
       message: "Xóa sản phẩm khỏi giỏ hàng thành công",
@@ -120,7 +120,7 @@ const toggleSelectItem = async (req, res) => {
 
     const cart = await cartService.toggleSelectCartItem(
       req.user.id,
-      req.params.productId,
+      req.params.itemId,
       value
     );
 

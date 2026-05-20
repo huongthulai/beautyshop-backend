@@ -25,6 +25,10 @@ const baseProductSchema = {
 
   tags: Joi.array().items(Joi.string().trim()).optional(),
 
+  volumeWeightOptions: Joi.array().items(Joi.string().trim()).optional(),
+
+  colorOptions: Joi.array().items(Joi.string().trim()).optional(),
+
   status: Joi.string()
     .valid("draft", "active", "out_of_stock", "inactive", "archived")
     .optional(),
