@@ -7,6 +7,7 @@ const {
   validateVoucher,
   calculateDiscount,
 } = require("../services/voucher.service");
+
 const Cart = require("../models/Cart");
 
 const applyVoucher = async (req, res) => {
@@ -15,6 +16,7 @@ const applyVoucher = async (req, res) => {
     const userId = req.user.id;
 
     const cart = await Cart.findOne({ userId });
+
     if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
       return res.status(400).json({
         success: false,
@@ -23,6 +25,7 @@ const applyVoucher = async (req, res) => {
     }
 
     const selectedItems = cart.items.filter((item) => item.isSelected);
+
     if (!selectedItems.length) {
       return res.status(400).json({
         success: false,
@@ -36,13 +39,13 @@ const applyVoucher = async (req, res) => {
     );
 
     const voucher = await validateVoucher({
-  code,
-  user: req.user,
-  cart: {
-    subtotal,
-    items: selectedItems,
-  },
-});
+      code,
+      user: req.user,
+      cart: {
+        subtotal,
+        items: selectedItems,
+      },
+    });
 
     const discount = calculateDiscount(voucher, { subtotal });
 
@@ -56,7 +59,7 @@ const applyVoucher = async (req, res) => {
   } catch (error) {
     return res.status(400).json({
       success: false,
-      message: error.message,
+      message: error.message || "Không thể áp dụng voucher",
     });
   }
 };
@@ -85,6 +88,26 @@ const getVouchersHandler = async (req, res) => {
     return res.json({
       success: true,
       message: "Lấy danh sách voucher thành công",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Không lấy được danh sách voucher",
+    });
+  }
+};
+
+const getPublicVouchers = async (req, res) => {
+  try {
+    const data = await getVouchers({
+      ...req.query,
+      status: "true",
+    });
+
+    return res.json({
+      success: true,
+      message: "Lấy danh sách voucher khả dụng thành công",
       data,
     });
   } catch (error) {
@@ -153,4 +176,5 @@ module.exports = {
   getVoucherById: getVoucherByIdHandler,
   updateVoucher: updateVoucherHandler,
   deleteVoucher: deleteVoucherHandler,
+  getPublicVouchers,
 };
