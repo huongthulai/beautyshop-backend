@@ -224,51 +224,96 @@ const deleteVoucher = async (id) => {
 
   return deleted;
 };
-const hasMatchingVoucherScope = async (voucher, cart = {}) => {
-  if (!voucher || voucher.applyScope === "all") return true;
+const getIdString = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value._id) return value._id.toString();
+  return value.toString();
+};
 
+const getItemLineTotal = (item) => {
+  return Number(item.lineTotal || 0);
+};
+
+const getEligibleItemsByVoucher = async (voucher, cart = {}) => {
   const items = Array.isArray(cart.items) ? cart.items : [];
+
+  if (!items.length) return [];
+
+  if (!voucher || voucher.applyScope === "all") {
+    return items;
+  }
+
   const productIds = items
-    .map((item) => item.productId?.toString())
+    .map((item) => getIdString(item.productId))
     .filter(Boolean);
 
-  if (!productIds.length) return false;
+  if (!productIds.length) return [];
 
   if (voucher.applyScope === "product") {
-    const allowedProductIds = (voucher.applicableProducts || [])
-      .map((id) => id.toString());
+    const allowedProductIds = new Set(
+      (voucher.applicableProducts || []).map((id) => getIdString(id))
+    );
 
-    return productIds.some((productId) => allowedProductIds.includes(productId));
+    return items.filter((item) => {
+      const productId = getIdString(item.productId);
+      return allowedProductIds.has(productId);
+    });
   }
 
   const products = await Product.find({
     _id: { $in: productIds },
   }).select("_id categoryId brandId");
 
-  if (voucher.applyScope === "category") {
-    const allowedCategoryIds = (voucher.applicableCategories || [])
-      .map((id) => id.toString());
+  const productMap = new Map(
+    products.map((product) => [product._id.toString(), product])
+  );
 
-    return products.some((product) =>
-      product.categoryId
-        ? allowedCategoryIds.includes(product.categoryId.toString())
-        : false
+  if (voucher.applyScope === "category") {
+    const allowedCategoryIds = new Set(
+      (voucher.applicableCategories || []).map((id) => getIdString(id))
     );
+
+    return items.filter((item) => {
+      const productId = getIdString(item.productId);
+      const product = productMap.get(productId);
+      const categoryId = getIdString(product?.categoryId);
+
+      return allowedCategoryIds.has(categoryId);
+    });
   }
 
   if (voucher.applyScope === "brand") {
-    const allowedBrandIds = (voucher.applicableBrands || [])
-      .map((id) => id.toString());
-
-    return products.some((product) =>
-      product.brandId
-        ? allowedBrandIds.includes(product.brandId.toString())
-        : false
+    const allowedBrandIds = new Set(
+      (voucher.applicableBrands || []).map((id) => getIdString(id))
     );
+
+    return items.filter((item) => {
+      const productId = getIdString(item.productId);
+      const product = productMap.get(productId);
+      const brandId = getIdString(product?.brandId);
+
+      return allowedBrandIds.has(brandId);
+    });
   }
 
-  return false;
+  return [];
 };
+
+const getEligibleSubtotalByVoucher = async (voucher, cart = {}) => {
+  const eligibleItems = await getEligibleItemsByVoucher(voucher, cart);
+
+  const eligibleSubtotal = eligibleItems.reduce(
+    (sum, item) => sum + getItemLineTotal(item),
+    0
+  );
+
+  return {
+    eligibleItems,
+    eligibleSubtotal,
+  };
+};
+
 const validateVoucher = async ({ code, user, cart }) => {
   if (!code?.trim()) {
     throw new Error("Vui lòng nhập mã voucher");
@@ -309,43 +354,57 @@ const validateVoucher = async ({ code, user, cart }) => {
     throw new Error("Voucher không áp dụng cho tài khoản của bạn");
   }
 
-  if (Number(cart?.subtotal || 0) < Number(voucher.minOrderValue || 0)) {
-  throw new Error(
-    `Đơn hàng chưa đạt giá trị tối thiểu ${Number(
-      voucher.minOrderValue || 0
-    ).toLocaleString("vi-VN")} đ`
+  const { eligibleItems, eligibleSubtotal } = await getEligibleSubtotalByVoucher(
+    voucher,
+    cart
   );
-}
 
-const matchScope = await hasMatchingVoucherScope(voucher, cart);
+  if (eligibleSubtotal <= 0) {
+    if (voucher.applyScope === "product") {
+      throw new Error("Voucher không áp dụng cho các sản phẩm đã chọn");
+    }
 
-if (!matchScope) {
-  if (voucher.applyScope === "product") {
-    throw new Error("Voucher không áp dụng cho các sản phẩm đã chọn");
+    if (voucher.applyScope === "category") {
+      throw new Error("Voucher không áp dụng cho danh mục sản phẩm trong giỏ hàng");
+    }
+
+    if (voucher.applyScope === "brand") {
+      throw new Error("Voucher không áp dụng cho thương hiệu sản phẩm trong giỏ hàng");
+    }
+
+    throw new Error("Voucher không áp dụng cho đơn hàng này");
   }
 
-  if (voucher.applyScope === "category") {
-    throw new Error("Voucher không áp dụng cho danh mục sản phẩm trong giỏ hàng");
+  /**
+   * Với voucher theo sản phẩm / danh mục / thương hiệu:
+   * minOrderValue sẽ tính trên tổng tiền các sản phẩm đủ điều kiện,
+   * không tính trên toàn đơn.
+   */
+  if (Number(eligibleSubtotal || 0) < Number(voucher.minOrderValue || 0)) {
+    throw new Error(
+      `Sản phẩm áp dụng voucher chưa đạt giá trị tối thiểu ${Number(
+        voucher.minOrderValue || 0
+      ).toLocaleString("vi-VN")} đ`
+    );
   }
 
-  if (voucher.applyScope === "brand") {
-    throw new Error("Voucher không áp dụng cho thương hiệu sản phẩm trong giỏ hàng");
-  }
+  voucher._eligibleItems = eligibleItems;
+  voucher._eligibleSubtotal = eligibleSubtotal;
 
-  throw new Error("Voucher không áp dụng cho đơn hàng này");
-}
-
-return voucher;
+  return voucher;
 };
 
-const calculateDiscount = (voucher, cart) => {
-  const subtotal = Number(cart?.subtotal || 0);
+const calculateDiscount = (voucher, cart = {}) => {
+  const eligibleSubtotal = Number(
+    voucher?._eligibleSubtotal || cart?.eligibleSubtotal || 0
+  );
+
   let discount = 0;
 
   if (voucher.discountType === "fixed") {
     discount = Number(voucher.discountValue || 0);
   } else if (voucher.discountType === "percent") {
-    discount = (subtotal * Number(voucher.discountValue || 0)) / 100;
+    discount = (eligibleSubtotal * Number(voucher.discountValue || 0)) / 100;
 
     if (voucher.maxDiscount !== null && voucher.maxDiscount !== undefined) {
       discount = Math.min(discount, Number(voucher.maxDiscount || 0));
@@ -354,8 +413,8 @@ const calculateDiscount = (voucher, cart) => {
 
   discount = Math.floor(discount);
 
-  if (discount > subtotal) {
-    discount = subtotal;
+  if (discount > eligibleSubtotal) {
+    discount = eligibleSubtotal;
   }
 
   return Math.max(discount, 0);
