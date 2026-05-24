@@ -21,23 +21,28 @@ const normalizeVoucherPayload = (payload = {}) => {
     discountValue: Number(payload.discountValue || 0),
     minOrderValue: Number(payload.minOrderValue || 0),
     maxDiscount:
-      discountType === "percent" && payload.maxDiscount !== null && payload.maxDiscount !== ""
+      discountType === "percent" &&
+      payload.maxDiscount !== null &&
+      payload.maxDiscount !== ""
         ? Number(payload.maxDiscount || 0)
         : null,
     usageLimit: Number(payload.usageLimit || 0),
     startDate: payload.startDate ? new Date(payload.startDate) : null,
     endDate: payload.endDate ? new Date(payload.endDate) : null,
-    isActive:
-      typeof payload.isActive === "boolean" ? payload.isActive : true,
+    isActive: typeof payload.isActive === "boolean" ? payload.isActive : true,
     applicableTiers:
       Array.isArray(payload.applicableTiers) && payload.applicableTiers.length
         ? payload.applicableTiers
         : ["regular", "vip", "vvip"],
     applyScope,
     applicableProducts:
-      applyScope === "product" ? cleanObjectIdList(payload.applicableProducts) : [],
+      applyScope === "product"
+        ? cleanObjectIdList(payload.applicableProducts)
+        : [],
     applicableCategories:
-      applyScope === "category" ? cleanObjectIdList(payload.applicableCategories) : [],
+      applyScope === "category"
+        ? cleanObjectIdList(payload.applicableCategories)
+        : [],
     applicableBrands:
       applyScope === "brand" ? cleanObjectIdList(payload.applicableBrands) : [],
   };
@@ -224,6 +229,7 @@ const deleteVoucher = async (id) => {
 
   return deleted;
 };
+
 const getIdString = (value) => {
   if (!value) return "";
   if (typeof value === "string") return value;
@@ -233,6 +239,25 @@ const getIdString = (value) => {
 
 const getItemLineTotal = (item) => {
   return Number(item.lineTotal || 0);
+};
+
+const getProductBrandId = (product) => {
+  return getIdString(
+    product?.brandId ||
+      product?.brand ||
+      product?.brand_id ||
+      product?.brandRef ||
+      product?.brand_id
+  );
+};
+
+const getProductCategoryId = (product) => {
+  return getIdString(
+    product?.categoryId ||
+      product?.category ||
+      product?.category_id ||
+      product?.categoryRef
+  );
 };
 
 const getEligibleItemsByVoucher = async (voucher, cart = {}) => {
@@ -245,7 +270,7 @@ const getEligibleItemsByVoucher = async (voucher, cart = {}) => {
   }
 
   const productIds = items
-    .map((item) => getIdString(item.productId))
+    .map((item) => getIdString(item.productId || item.product))
     .filter(Boolean);
 
   if (!productIds.length) return [];
@@ -256,14 +281,14 @@ const getEligibleItemsByVoucher = async (voucher, cart = {}) => {
     );
 
     return items.filter((item) => {
-      const productId = getIdString(item.productId);
+      const productId = getIdString(item.productId || item.product);
       return allowedProductIds.has(productId);
     });
   }
 
   const products = await Product.find({
     _id: { $in: productIds },
-  }).select("_id categoryId brandId");
+  }).select("_id categoryId category category_id categoryRef brandId brand brand_id brandRef");
 
   const productMap = new Map(
     products.map((product) => [product._id.toString(), product])
@@ -275,9 +300,9 @@ const getEligibleItemsByVoucher = async (voucher, cart = {}) => {
     );
 
     return items.filter((item) => {
-      const productId = getIdString(item.productId);
+      const productId = getIdString(item.productId || item.product);
       const product = productMap.get(productId);
-      const categoryId = getIdString(product?.categoryId);
+      const categoryId = getProductCategoryId(product);
 
       return allowedCategoryIds.has(categoryId);
     });
@@ -289,9 +314,9 @@ const getEligibleItemsByVoucher = async (voucher, cart = {}) => {
     );
 
     return items.filter((item) => {
-      const productId = getIdString(item.productId);
+      const productId = getIdString(item.productId || item.product);
       const product = productMap.get(productId);
-      const brandId = getIdString(product?.brandId);
+      const brandId = getProductBrandId(product);
 
       return allowedBrandIds.has(brandId);
     });
@@ -345,12 +370,12 @@ const validateVoucher = async ({ code, user, cart }) => {
     throw new Error("Voucher đã hết lượt sử dụng");
   }
 
-  if (
-    user?.membershipTier &&
-    Array.isArray(voucher.applicableTiers) &&
-    voucher.applicableTiers.length > 0 &&
-    !voucher.applicableTiers.includes(user.membershipTier)
-  ) {
+  const userTier = String(user?.membershipTier || "regular").toLowerCase();
+  const applicableTiers = Array.isArray(voucher.applicableTiers)
+    ? voucher.applicableTiers.map((tier) => String(tier).toLowerCase())
+    : [];
+
+  if (applicableTiers.length > 0 && !applicableTiers.includes(userTier)) {
     throw new Error("Voucher không áp dụng cho tài khoản của bạn");
   }
 
@@ -375,11 +400,6 @@ const validateVoucher = async ({ code, user, cart }) => {
     throw new Error("Voucher không áp dụng cho đơn hàng này");
   }
 
-  /**
-   * Với voucher theo sản phẩm / danh mục / thương hiệu:
-   * minOrderValue sẽ tính trên tổng tiền các sản phẩm đủ điều kiện,
-   * không tính trên toàn đơn.
-   */
   if (Number(eligibleSubtotal || 0) < Number(voucher.minOrderValue || 0)) {
     throw new Error(
       `Sản phẩm áp dụng voucher chưa đạt giá trị tối thiểu ${Number(
@@ -388,15 +408,19 @@ const validateVoucher = async ({ code, user, cart }) => {
     );
   }
 
-  voucher._eligibleItems = eligibleItems;
-  voucher._eligibleSubtotal = eligibleSubtotal;
+  voucher.$locals = voucher.$locals || {};
+  voucher.$locals.eligibleItems = eligibleItems;
+  voucher.$locals.eligibleSubtotal = eligibleSubtotal;
 
   return voucher;
 };
 
 const calculateDiscount = (voucher, cart = {}) => {
   const eligibleSubtotal = Number(
-    voucher?._eligibleSubtotal || cart?.eligibleSubtotal || 0
+    voucher?.$locals?.eligibleSubtotal ||
+      voucher?._eligibleSubtotal ||
+      cart?.eligibleSubtotal ||
+      0
   );
 
   let discount = 0;

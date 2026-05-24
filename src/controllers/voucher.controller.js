@@ -47,13 +47,25 @@ const applyVoucher = async (req, res) => {
       },
     });
 
-    const discount = calculateDiscount(voucher, { subtotal });
+    const discount = calculateDiscount(voucher, {
+      subtotal,
+      items: selectedItems,
+    });
+
+    console.log("APPLY VOUCHER DEBUG:", {
+      code: voucher.code,
+      applyScope: voucher.applyScope,
+      subtotal,
+      eligibleSubtotal: voucher.$locals?.eligibleSubtotal || 0,
+      discount,
+    });
 
     return res.json({
       success: true,
       data: {
         voucher,
         discount,
+        eligibleSubtotal: voucher.$locals?.eligibleSubtotal || 0,
       },
     });
   } catch (error) {
