@@ -45,6 +45,14 @@ const buildBrandLink = (brand) => `/products?brand=${brand.slug}`;
 const buildNeedAdminReply = () =>
   "Mình chưa có câu trả lời chính xác cho câu hỏi này. Mình đã ghi nhận và nhân viên BeautyShop sẽ trả lời bạn sớm nhất tại khung chat này nhé.";
 
+const stripRawInternalLinks = (reply = "") =>
+  reply
+    .toString()
+    .replace(/\n?\/products\?[^\n\s]+/gi, "")
+    .replace(/\n?\/products\/[A-Za-z0-9_-]+/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
 const PRODUCT_KEYWORD_MAP = [
   {
     keys: ["da dau", "dau nhon", "kiem dau", "mụn", "mun"],
@@ -265,11 +273,11 @@ const buildProductReply = ({ products, title }) => {
       const brandName = item.brandId?.name ? ` · ${item.brandId.name}` : "";
       const categoryName = item.categoryId?.name ? ` · ${item.categoryId.name}` : "";
 
-      return `${index + 1}. ${item.name}${brandName}${categoryName}\nGiá: ${price}\n${buildProductLink(item)}`;
+      return `${index + 1}. ${item.name}${brandName}${categoryName}\nGiá: ${price}`;
     })
     .join("\n\n");
 
-  return `${title}\n\n${productLines}`;
+  return `${title}\n\n${productLines}\n\nBạn có thể bấm vào thẻ sản phẩm bên dưới để xem chi tiết nhé.`;
 };
 
 const suggestProducts = async (message) => {
@@ -420,14 +428,14 @@ const listCategories = async () => {
   const lines = categories
     .map((category, index) => {
       const name = getCategoryName(category);
-      return `${index + 1}. ${name}\n${buildCategoryLink(category)}`;
+      return `${index + 1}. ${name}`;
     })
-    .join("\n\n");
+    .join("\n");
 
   return {
     intent: "product_suggestion",
     status: "bot_answered",
-    reply: `BeautyShop hiện có các danh mục sản phẩm sau:\n\n${lines}\n\nBạn có thể hỏi mình như: “gợi ý sản phẩm chống nắng”, “shop có son không”, hoặc “sản phẩm skincare cho da dầu”.`,
+    reply: `BeautyShop hiện có các danh mục sản phẩm sau:\n\n${lines}\n\nBạn có thể bấm vào các danh mục bên dưới hoặc hỏi mình như: “gợi ý sản phẩm chống nắng”, “shop có son không”, “sản phẩm skincare cho da dầu”.`,
     metadata: {
       categories: categories.map((category) => ({
         id: category._id,
@@ -458,14 +466,14 @@ const listBrands = async () => {
     .slice(0, 12)
     .map((brand, index) => {
       const name = getBrandName(brand);
-      return `${index + 1}. ${name}\n${buildBrandLink(brand)}`;
+      return `${index + 1}. ${name}`;
     })
-    .join("\n\n");
+    .join("\n");
 
   return {
     intent: "product_suggestion",
     status: "bot_answered",
-    reply: `BeautyShop hiện có một số thương hiệu sau:\n\n${lines}`,
+    reply: `BeautyShop hiện có một số thương hiệu sau:\n\n${lines}\n\nBạn có thể bấm vào thương hiệu bên dưới để xem sản phẩm tương ứng nhé.`,
     metadata: {
       brands: brands.slice(0, 12).map((brand) => ({
         id: brand._id,
@@ -741,6 +749,8 @@ const handleChat = async ({ userId = null, sessionId = null, message }) => {
       };
     }
   }
+
+  result.reply = stripRawInternalLinks(result.reply);
 
   const savedMessage = await ChatMessage.create({
     userId,
