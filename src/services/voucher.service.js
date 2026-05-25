@@ -263,18 +263,19 @@ const getProductCategoryId = (product) => {
 
 
 const getUserMembershipTier = async (user) => {
-  if (user?.membershipTier) {
-    return String(user.membershipTier).toLowerCase();
-  }
-
   const userId = user?._id || user?.id;
 
+  // Ưu tiên lấy hạng thành viên mới nhất trong DB, vì JWT/localStorage có thể bị cũ.
   if (userId && mongoose.Types.ObjectId.isValid(userId)) {
     const userDoc = await User.findById(userId).select("membershipTier").lean();
 
     if (userDoc?.membershipTier) {
       return String(userDoc.membershipTier).toLowerCase();
     }
+  }
+
+  if (user?.membershipTier) {
+    return String(user.membershipTier).toLowerCase();
   }
 
   return "regular";
@@ -437,9 +438,9 @@ const validateVoucher = async ({ code, user, cart }) => {
 
 const calculateDiscount = (voucher, cart = {}) => {
   const eligibleSubtotal = Number(
-    voucher?.$locals?.eligibleSubtotal ??
-      voucher?._eligibleSubtotal ??
-      cart?.eligibleSubtotal ??
+    voucher?.$locals?.eligibleSubtotal ||
+      voucher?._eligibleSubtotal ||
+      cart?.eligibleSubtotal ||
       0
   );
 

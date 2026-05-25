@@ -9,18 +9,11 @@ const {
 } = require("../services/voucher.service");
 
 const Cart = require("../models/Cart");
-const User = require("../models/User");
 
 const applyVoucher = async (req, res) => {
   try {
     const { code } = req.body;
-    const userId = req.user?.id || req.user?._id;
-
-    const currentUser = await User.findById(userId)
-      .select("name email role membershipTier")
-      .lean();
-
-    const userForVoucher = currentUser || req.user;
+    const userId = req.user.id;
 
     const cart = await Cart.findOne({ userId });
 
@@ -47,7 +40,7 @@ const applyVoucher = async (req, res) => {
 
     const voucher = await validateVoucher({
       code,
-      user: userForVoucher,
+      user: req.user,
       cart: {
         subtotal,
         items: selectedItems,

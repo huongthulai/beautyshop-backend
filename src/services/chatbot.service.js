@@ -4,6 +4,21 @@ const Order = require("../models/Order");
 const ChatMessage = require("../models/ChatMessage");
 const ChatKnowledge = require("../models/ChatKnowledge");
 
+let Category = null;
+let Brand = null;
+
+try {
+  Category = require("../models/Category");
+} catch (error) {
+  Category = null;
+}
+
+try {
+  Brand = require("../models/Brand");
+} catch (error) {
+  Brand = null;
+}
+
 const normalizeText = (text = "") =>
   text
     .toString()
@@ -15,63 +30,336 @@ const normalizeText = (text = "") =>
 const escapeRegex = (text = "") =>
   text.toString().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const formatMoney = (value) =>
+  `${Number(value || 0).toLocaleString("vi-VN")}đ`;
+
 const detectOrderCode = (message = "") => {
   const match = message.match(/ORD\d{8}\d{4}/i);
   return match ? match[0].toUpperCase() : null;
 };
 
 const buildProductLink = (product) => `/products/${product.slug || product._id}`;
+const buildCategoryLink = (category) => `/products?category=${category.slug}`;
+const buildBrandLink = (brand) => `/products?brand=${brand.slug}`;
 
 const buildNeedAdminReply = () =>
   "Mình chưa có câu trả lời chính xác cho câu hỏi này. Mình đã ghi nhận và nhân viên BeautyShop sẽ trả lời bạn sớm nhất tại khung chat này nhé.";
 
-const getProductKeyword = (message = "") => {
+const PRODUCT_KEYWORD_MAP = [
+  {
+    keys: ["da dau", "dau nhon", "kiem dau", "mụn", "mun"],
+    value: "kiềm dầu",
+    extraKeywords: ["da dầu", "kiềm dầu", "oil control", "mụn"],
+  },
+  {
+    keys: ["da kho", "cap am", "duong am", "kho da"],
+    value: "cấp ẩm",
+    extraKeywords: ["cấp ẩm", "dưỡng ẩm", "hydration", "moisturizer"],
+  },
+  {
+    keys: ["da nhay cam", "nhay cam", "kich ung"],
+    value: "dịu nhẹ",
+    extraKeywords: ["dịu nhẹ", "sensitive", "phục hồi", "làm dịu"],
+  },
+  {
+    keys: ["son do", "mau do"],
+    value: "son đỏ",
+    extraKeywords: ["son đỏ", "son", "red"],
+  },
+  {
+    keys: ["son", "lipstick", "moi"],
+    value: "son",
+    extraKeywords: ["son", "lipstick", "môi"],
+  },
+  {
+    keys: ["kem nen", "foundation", "nen"],
+    value: "kem nền",
+    extraKeywords: ["kem nền", "foundation"],
+  },
+  {
+    keys: ["cushion", "phan nuoc"],
+    value: "cushion",
+    extraKeywords: ["cushion", "phấn nước"],
+  },
+  {
+    keys: ["chong nang", "kem chong nang", "sunscreen", "uv"],
+    value: "chống nắng",
+    extraKeywords: ["chống nắng", "sunscreen", "uv"],
+  },
+  {
+    keys: ["tay trang", "nuoc tay trang", "cleansing"],
+    value: "tẩy trang",
+    extraKeywords: ["tẩy trang", "cleansing", "makeup remover"],
+  },
+  {
+    keys: ["serum", "tinh chat"],
+    value: "serum",
+    extraKeywords: ["serum", "tinh chất"],
+  },
+  {
+    keys: ["sua rua mat", "rua mat", "cleanser"],
+    value: "sữa rửa mặt",
+    extraKeywords: ["sữa rửa mặt", "cleanser", "rửa mặt"],
+  },
+  {
+    keys: ["mat na", "mask"],
+    value: "mask",
+    extraKeywords: ["mask", "mặt nạ"],
+  },
+  {
+    keys: ["phan phu", "powder"],
+    value: "phấn phủ",
+    extraKeywords: ["phấn phủ", "powder"],
+  },
+  {
+    keys: ["ma hong", "blush"],
+    value: "má hồng",
+    extraKeywords: ["má hồng", "blush"],
+  },
+];
+
+const PRODUCT_STOP_WORDS = [
+  "tu van",
+  "tư vấn",
+  "goi y",
+  "gợi ý",
+  "tim",
+  "tìm",
+  "san pham",
+  "sản phẩm",
+  "shop",
+  "co",
+  "có",
+  "ban",
+  "bán",
+  "cho minh",
+  "cho mình",
+  "phu hop",
+  "phù hợp",
+  "nen dung",
+  "nên dùng",
+  "loai nao",
+  "loại nào",
+  "nao",
+  "nào",
+  "gi",
+  "gì",
+];
+
+const getActiveFilter = () => ({
+  $or: [
+    { status: "active" },
+    { isActive: true },
+    { status: { $exists: false } },
+    { isActive: { $exists: false } },
+  ],
+});
+
+const getCategoryName = (category) => category?.name || category?.title || "";
+const getBrandName = (brand) => brand?.name || brand?.title || "";
+
+const makeRegexOr = (terms = []) => {
+  const cleanTerms = terms
+    .map((term) => term?.toString().trim())
+    .filter(Boolean)
+    .map(escapeRegex);
+
+  if (!cleanTerms.length) return null;
+
+  return new RegExp(cleanTerms.join("|"), "i");
+};
+
+const getProductKeywordInfo = (message = "") => {
   const normalized = normalizeText(message);
 
-  const keywordMap = [
-    { keys: ["da dau", "dau nhon", "kiem dau"], value: "da dầu" },
-    { keys: ["da kho", "cap am", "duong am"], value: "da khô" },
-    { keys: ["son do", "mau do"], value: "son đỏ" },
-    { keys: ["kem nen", "foundation"], value: "kem nền" },
-    { keys: ["chong nang", "kem chong nang"], value: "chống nắng" },
-    { keys: ["tay trang", "nuoc tay trang"], value: "tẩy trang" },
-    { keys: ["serum"], value: "serum" },
-    { keys: ["sua rua mat"], value: "sữa rửa mặt" },
-  ];
-
-  const matched = keywordMap.find((item) =>
-    item.keys.some((key) => normalized.includes(key))
+  const matched = PRODUCT_KEYWORD_MAP.find((item) =>
+    item.keys.some((key) => normalized.includes(normalizeText(key)))
   );
 
-  if (matched) return matched.value;
+  if (matched) {
+    return {
+      keyword: matched.value,
+      terms: [matched.value, ...(matched.extraKeywords || [])],
+    };
+  }
 
-  return message
-    .replace(/tư vấn|tu van|gợi ý|goi y|sản phẩm|san pham/gi, "")
-    .trim();
+  let cleaned = message;
+
+  PRODUCT_STOP_WORDS.forEach((word) => {
+    cleaned = cleaned.replace(new RegExp(escapeRegex(word), "gi"), " ");
+  });
+
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+
+  return {
+    keyword: cleaned || message.trim(),
+    terms: cleaned ? [cleaned] : [message.trim()],
+  };
+};
+
+const getCategories = async () => {
+  if (!Category) return [];
+
+  return Category.find(getActiveFilter()).sort({ name: 1 }).lean();
+};
+
+const getBrands = async () => {
+  if (!Brand) return [];
+
+  return Brand.find(getActiveFilter()).sort({ name: 1 }).lean();
+};
+
+const findMatchedCategory = async (message = "") => {
+  const normalized = normalizeText(message);
+  const categories = await getCategories();
+
+  return (
+    categories.find((category) => {
+      const name = normalizeText(getCategoryName(category));
+      const slug = normalizeText(category.slug || "");
+
+      return (
+        (name && normalized.includes(name)) ||
+        (slug && normalized.includes(slug))
+      );
+    }) || null
+  );
+};
+
+const findMatchedBrand = async (message = "") => {
+  const normalized = normalizeText(message);
+  const brands = await getBrands();
+
+  return (
+    brands.find((brand) => {
+      const name = normalizeText(getBrandName(brand));
+      const slug = normalizeText(brand.slug || "");
+
+      return (
+        (name && normalized.includes(name)) ||
+        (slug && normalized.includes(slug))
+      );
+    }) || null
+  );
+};
+
+const buildProductMetadata = (products = []) =>
+  products.map((item) => ({
+    id: item._id,
+    name: item.name,
+    slug: item.slug,
+    image: item.images?.[0] || "",
+    price: item.finalPrice || item.originalPrice,
+    originalPrice: item.originalPrice || 0,
+    finalPrice: item.finalPrice || item.originalPrice || 0,
+    salePercent: item.salePercent || 0,
+    link: buildProductLink(item),
+    categoryName: item.categoryId?.name || "",
+    brandName: item.brandId?.name || "",
+  }));
+
+const buildProductReply = ({ products, title }) => {
+  const productLines = products
+    .map((item, index) => {
+      const price = formatMoney(item.finalPrice || item.originalPrice || 0);
+      const brandName = item.brandId?.name ? ` · ${item.brandId.name}` : "";
+      const categoryName = item.categoryId?.name ? ` · ${item.categoryId.name}` : "";
+
+      return `${index + 1}. ${item.name}${brandName}${categoryName}\nGiá: ${price}\n${buildProductLink(item)}`;
+    })
+    .join("\n\n");
+
+  return `${title}\n\n${productLines}`;
 };
 
 const suggestProducts = async (message) => {
-  const keyword = getProductKeyword(message);
-  const safeKeyword = escapeRegex(keyword);
+  const { keyword, terms } = getProductKeywordInfo(message);
+  const matchedCategory = await findMatchedCategory(message);
+  const matchedBrand = await findMatchedBrand(message);
 
-  const products = await Product.find({
+  const regex = makeRegexOr([
+    keyword,
+    ...terms,
+    matchedCategory ? getCategoryName(matchedCategory) : "",
+    matchedBrand ? getBrandName(matchedBrand) : "",
+  ]);
+
+  const filter = {
     status: "active",
-    $or: [
-      { name: { $regex: safeKeyword, $options: "i" } },
-      { description: { $regex: safeKeyword, $options: "i" } },
-      { tags: { $regex: safeKeyword, $options: "i" } },
-    ],
-  })
-    .sort({ createdAt: -1 })
-    .limit(5)
+  };
+
+  const andConditions = [];
+
+  if (matchedCategory?._id) {
+    andConditions.push({ categoryId: matchedCategory._id });
+  }
+
+  if (matchedBrand?._id) {
+    andConditions.push({ brandId: matchedBrand._id });
+  }
+
+  if (regex) {
+    andConditions.push({
+      $or: [
+        { name: regex },
+        { description: regex },
+        { tags: regex },
+        { sku: regex },
+      ],
+    });
+  }
+
+  if (andConditions.length) {
+    filter.$and = andConditions;
+  }
+
+  let products = await Product.find(filter)
+    .populate("categoryId", "name slug")
+    .populate("brandId", "name slug")
+    .sort({ salePercent: -1, createdAt: -1 })
+    .limit(6)
     .lean();
+
+  if (!products.length && (matchedCategory?._id || matchedBrand?._id)) {
+    const fallbackFilter = {
+      status: "active",
+      $or: [],
+    };
+
+    if (matchedCategory?._id) fallbackFilter.$or.push({ categoryId: matchedCategory._id });
+    if (matchedBrand?._id) fallbackFilter.$or.push({ brandId: matchedBrand._id });
+
+    products = await Product.find(fallbackFilter)
+      .populate("categoryId", "name slug")
+      .populate("brandId", "name slug")
+      .sort({ salePercent: -1, createdAt: -1 })
+      .limit(6)
+      .lean();
+  }
+
+  if (!products.length && regex) {
+    products = await Product.find({
+      status: "active",
+      $or: [
+        { name: regex },
+        { description: regex },
+        { tags: regex },
+        { sku: regex },
+      ],
+    })
+      .populate("categoryId", "name slug")
+      .populate("brandId", "name slug")
+      .sort({ salePercent: -1, createdAt: -1 })
+      .limit(6)
+      .lean();
+  }
 
   if (!products.length) {
     return {
       intent: "product_suggestion",
       status: "need_admin",
       reply:
-        "Mình chưa tìm thấy sản phẩm thật phù hợp với từ khóa này. Mình đã chuyển câu hỏi cho nhân viên để tư vấn kỹ hơn cho bạn nhé.",
+        "Mình chưa tìm thấy sản phẩm thật phù hợp với từ khóa này. Bạn có thể hỏi theo tên sản phẩm, danh mục như chống nắng/kem nền/son/serum, hoặc thương hiệu. Mình cũng đã chuyển câu hỏi cho nhân viên để tư vấn kỹ hơn nhé.",
       metadata: {
         keyword,
         products: [],
@@ -79,29 +367,111 @@ const suggestProducts = async (message) => {
     };
   }
 
-  const productLines = products
-    .map((item, index) => {
-      const price = Number(
-        item.finalPrice || item.originalPrice || 0
-      ).toLocaleString("vi-VN");
+  const contextParts = [];
+  if (matchedCategory) contextParts.push(`danh mục ${getCategoryName(matchedCategory)}`);
+  if (matchedBrand) contextParts.push(`thương hiệu ${getBrandName(matchedBrand)}`);
 
-      return `${index + 1}. ${item.name} - ${price}đ\n${buildProductLink(item)}`;
+  const title = contextParts.length
+    ? `Mình tìm thấy một số sản phẩm phù hợp với ${contextParts.join(", ")}:`
+    : `Mình gợi ý cho bạn một số sản phẩm phù hợp với “${keyword}”:`;
+
+  return {
+    intent: "product_suggestion",
+    status: "bot_answered",
+    reply: buildProductReply({ products, title }),
+    metadata: {
+      keyword,
+      matchedCategory: matchedCategory
+        ? {
+            id: matchedCategory._id,
+            name: getCategoryName(matchedCategory),
+            slug: matchedCategory.slug,
+            link: buildCategoryLink(matchedCategory),
+          }
+        : null,
+      matchedBrand: matchedBrand
+        ? {
+            id: matchedBrand._id,
+            name: getBrandName(matchedBrand),
+            slug: matchedBrand.slug,
+            link: buildBrandLink(matchedBrand),
+          }
+        : null,
+      products: buildProductMetadata(products),
+    },
+  };
+};
+
+const listCategories = async () => {
+  const categories = await getCategories();
+
+  if (!categories.length) {
+    return {
+      intent: "product_suggestion",
+      status: "need_admin",
+      reply:
+        "Mình chưa lấy được danh mục sản phẩm từ hệ thống. Bạn thử lại sau hoặc nhắn nhân viên BeautyShop hỗ trợ nhé.",
+      metadata: {
+        categories: [],
+      },
+    };
+  }
+
+  const lines = categories
+    .map((category, index) => {
+      const name = getCategoryName(category);
+      return `${index + 1}. ${name}\n${buildCategoryLink(category)}`;
     })
     .join("\n\n");
 
   return {
     intent: "product_suggestion",
     status: "bot_answered",
-    reply: `Mình gợi ý cho bạn một số sản phẩm phù hợp:\n\n${productLines}`,
+    reply: `BeautyShop hiện có các danh mục sản phẩm sau:\n\n${lines}\n\nBạn có thể hỏi mình như: “gợi ý sản phẩm chống nắng”, “shop có son không”, hoặc “sản phẩm skincare cho da dầu”.`,
     metadata: {
-      keyword,
-      products: products.map((item) => ({
-        id: item._id,
-        name: item.name,
-        slug: item.slug,
-        image: item.images?.[0] || "",
-        price: item.finalPrice || item.originalPrice,
-        link: buildProductLink(item),
+      categories: categories.map((category) => ({
+        id: category._id,
+        name: getCategoryName(category),
+        slug: category.slug,
+        link: buildCategoryLink(category),
+      })),
+    },
+  };
+};
+
+const listBrands = async () => {
+  const brands = await getBrands();
+
+  if (!brands.length) {
+    return {
+      intent: "product_suggestion",
+      status: "need_admin",
+      reply:
+        "Mình chưa lấy được danh sách thương hiệu từ hệ thống. Bạn thử lại sau hoặc nhắn nhân viên BeautyShop hỗ trợ nhé.",
+      metadata: {
+        brands: [],
+      },
+    };
+  }
+
+  const lines = brands
+    .slice(0, 12)
+    .map((brand, index) => {
+      const name = getBrandName(brand);
+      return `${index + 1}. ${name}\n${buildBrandLink(brand)}`;
+    })
+    .join("\n\n");
+
+  return {
+    intent: "product_suggestion",
+    status: "bot_answered",
+    reply: `BeautyShop hiện có một số thương hiệu sau:\n\n${lines}`,
+    metadata: {
+      brands: brands.slice(0, 12).map((brand) => ({
+        id: brand._id,
+        name: getBrandName(brand),
+        slug: brand.slug,
+        link: buildBrandLink(brand),
       })),
     },
   };
@@ -137,22 +507,30 @@ const lookupOrder = async ({ userId, message }) => {
     };
   }
 
-  const statusMap = {
+  const fulfillmentStatusMap = {
     pending: "Chờ xử lý",
-    processing: "Đang xử lý",
+    processing: "Chờ vận chuyển",
     shipped: "Đang giao hàng",
     delivered: "Đã giao hàng",
     cancelled: "Đã hủy",
+  };
+
+  const paymentStatusMap = {
+    unpaid: "Chưa thanh toán",
+    pending: "Chờ thanh toán",
+    paid: "Đã thanh toán",
+    failed: "Thanh toán thất bại",
+    refunded: "Đã hoàn tiền",
   };
 
   return {
     intent: "order_lookup",
     status: "bot_answered",
     reply: `Đơn hàng ${order.orderCode} hiện đang ở trạng thái: ${
-      statusMap[order.fulfillmentStatus] || order.fulfillmentStatus
-    }.\nTổng tiền: ${Number(order.totalAmount || 0).toLocaleString(
-      "vi-VN"
-    )}đ.\nThanh toán: ${order.paymentStatus}.`,
+      fulfillmentStatusMap[order.fulfillmentStatus] || order.fulfillmentStatus
+    }.\nTổng tiền: ${formatMoney(order.totalAmount || 0)}.\nThanh toán: ${
+      paymentStatusMap[order.paymentStatus] || order.paymentStatus
+    }.`,
     metadata: {
       orderCode: order.orderCode,
       fulfillmentStatus: order.fulfillmentStatus,
@@ -186,6 +564,10 @@ const findKnowledgeReply = async (message) => {
 
       if (normalizedMessage.includes(normalizedKeyword)) {
         score += 3;
+      }
+
+      if (normalizedKeyword.includes(normalizedMessage) && normalizedMessage.length >= 4) {
+        score += 1;
       }
     }
 
@@ -231,24 +613,90 @@ const findKnowledgeReply = async (message) => {
 const getPolicyReply = (message) => {
   const normalized = normalizeText(message);
 
-  if (normalized.includes("doi tra") || normalized.includes("hoan hang")) {
-    return "BeautyShop hỗ trợ đổi trả trong 7 ngày nếu sản phẩm còn nguyên tem, chưa qua sử dụng và lỗi đến từ nhà sản xuất.";
+  if (normalized.includes("doi tra") || normalized.includes("hoan hang") || normalized.includes("tra hang")) {
+    return "BeautyShop hỗ trợ đổi hàng trong 7 ngày và trả hàng trong 24 giờ. Điều kiện: bạn cần quay video mở hàng, sản phẩm còn nguyên seal/chưa sử dụng và liên hệ shop để được hướng dẫn xử lý.";
   }
 
   if (
     normalized.includes("ship") ||
     normalized.includes("van chuyen") ||
     normalized.includes("giao hang") ||
-    normalized.includes("phi ship")
+    normalized.includes("phi ship") ||
+    normalized.includes("freeship") ||
+    normalized.includes("mien phi van chuyen")
   ) {
-    return "Phí vận chuyển sẽ được hiển thị ở bước thanh toán. Một số chương trình có thể hỗ trợ freeship theo giá trị đơn hàng.";
+    return "BeautyShop có chính sách miễn phí vận chuyển theo hạng thành viên: khách thường freeship từ 599.000đ, VIP từ 299.000đ và VVIP từ 99.000đ. Phí ship cụ thể sẽ được hiển thị ở bước thanh toán.";
   }
 
-  if (normalized.includes("thanh toan") || normalized.includes("cod")) {
-    return "BeautyShop hỗ trợ COD, chuyển khoản, MoMo và VNPay. Với thanh toán online, đơn hàng sẽ ở trạng thái chờ xác nhận thanh toán.";
+  if (
+    normalized.includes("thanh toan") ||
+    normalized.includes("cod") ||
+    normalized.includes("chuyen khoan") ||
+    normalized.includes("momo") ||
+    normalized.includes("vnpay")
+  ) {
+    return "BeautyShop hiện hỗ trợ thanh toán COD. Nếu shop bật thêm chuyển khoản/MoMo/VNPay, hướng dẫn thanh toán sẽ hiển thị sau khi bạn tạo đơn.";
+  }
+
+  if (normalized.includes("dang nhap") || normalized.includes("tai khoan")) {
+    return "Bạn nên đăng nhập để đặt hàng, lưu địa chỉ, theo dõi đơn hàng, tích lũy chi tiêu và nhận quyền lợi theo hạng thành viên.";
   }
 
   return null;
+};
+
+const hasCategoryIntent = (normalized = "") =>
+  normalized.includes("danh muc") ||
+  normalized.includes("category") ||
+  normalized.includes("loai san pham") ||
+  normalized.includes("nhom san pham") ||
+  normalized.includes("shop co nhung san pham gi") ||
+  normalized.includes("ban nhung gi") ||
+  normalized.includes("co nhung gi");
+
+const hasBrandIntent = (normalized = "") =>
+  normalized.includes("thuong hieu") ||
+  normalized.includes("brand") ||
+  normalized.includes("hang nao") ||
+  normalized.includes("nhan hang");
+
+const hasOrderIntent = (normalized = "", text = "") =>
+  normalized.includes("don hang") ||
+  normalized.includes("ma don") ||
+  normalized.includes("theo doi don") ||
+  /ORD\d{8}\d{4}/i.test(text);
+
+const hasProductIntent = (normalized = "") => {
+  const productWords = [
+    "goi y",
+    "tu van",
+    "san pham",
+    "tim",
+    "co ban",
+    "shop co",
+    "da dau",
+    "da kho",
+    "nhay cam",
+    "mụn",
+    "mun",
+    "son",
+    "kem nen",
+    "cushion",
+    "chong nang",
+    "tay trang",
+    "serum",
+    "sua rua mat",
+    "skincare",
+    "mask",
+    "mat na",
+    "phan phu",
+    "ma hong",
+    "duong am",
+    "cap am",
+    "kiem dau",
+  ];
+
+  return productWords.some((word) => normalized.includes(normalizeText(word)));
 };
 
 const handleChat = async ({ userId = null, sessionId = null, message }) => {
@@ -259,55 +707,38 @@ const handleChat = async ({ userId = null, sessionId = null, message }) => {
   }
 
   const normalized = normalizeText(text);
-
-  const hasOrderIntent =
-    normalized.includes("don hang") ||
-    normalized.includes("ma don") ||
-    normalized.includes("theo doi don") ||
-    /ORD\d{8}\d{4}/i.test(text);
-
-  const hasProductIntent =
-    normalized.includes("goi y") ||
-    normalized.includes("tu van") ||
-    normalized.includes("da dau") ||
-    normalized.includes("da kho") ||
-    normalized.includes("son") ||
-    normalized.includes("kem nen") ||
-    normalized.includes("san pham") ||
-    normalized.includes("chong nang") ||
-    normalized.includes("tay trang") ||
-    normalized.includes("serum") ||
-    normalized.includes("sua rua mat");
-
   let result;
 
-  if (hasOrderIntent) {
-    result = await lookupOrder({ userId, message: text });
-  } else if (hasProductIntent) {
-    result = await suggestProducts(text);
-  } else {
-    const policyReply = getPolicyReply(text);
+  const policyReply = getPolicyReply(text);
 
-    if (policyReply) {
+  if (hasOrderIntent(normalized, text)) {
+    result = await lookupOrder({ userId, message: text });
+  } else if (hasCategoryIntent(normalized)) {
+    result = await listCategories();
+  } else if (hasBrandIntent(normalized)) {
+    result = await listBrands();
+  } else if (hasProductIntent(normalized)) {
+    result = await suggestProducts(text);
+  } else if (policyReply) {
+    result = {
+      intent: "policy",
+      status: "bot_answered",
+      reply: policyReply,
+      metadata: {},
+    };
+  } else {
+    const knowledgeReply = await findKnowledgeReply(text);
+
+    if (knowledgeReply) {
+      result = knowledgeReply;
+    } else {
       result = {
-        intent: "policy",
-        status: "bot_answered",
-        reply: policyReply,
+        intent: "general",
+        status: "need_admin",
+        reply:
+          "Mình chưa chắc câu trả lời chính xác. Bạn có thể hỏi mình theo các mẫu như: “shop có danh mục gì?”, “gợi ý kem chống nắng”, “sản phẩm cho da dầu”, “tra cứu đơn ORD...”, hoặc nhân viên BeautyShop sẽ hỗ trợ bạn sớm nhất nhé.",
         metadata: {},
       };
-    } else {
-      const knowledgeReply = await findKnowledgeReply(text);
-
-      if (knowledgeReply) {
-        result = knowledgeReply;
-      } else {
-        result = {
-          intent: "general",
-          status: "need_admin",
-          reply: buildNeedAdminReply(),
-          metadata: {},
-        };
-      }
     }
   }
 
