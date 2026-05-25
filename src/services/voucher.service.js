@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Voucher = require("../models/Voucher");
 const Product = require("../models/Product");
+const User = require("../models/User");
 
 const cleanObjectIdList = (list = []) => {
   if (!Array.isArray(list)) return [];
@@ -260,6 +261,25 @@ const getProductCategoryId = (product) => {
   );
 };
 
+
+const getUserMembershipTier = async (user) => {
+  if (user?.membershipTier) {
+    return String(user.membershipTier).toLowerCase();
+  }
+
+  const userId = user?._id || user?.id;
+
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+    const userDoc = await User.findById(userId).select("membershipTier").lean();
+
+    if (userDoc?.membershipTier) {
+      return String(userDoc.membershipTier).toLowerCase();
+    }
+  }
+
+  return "regular";
+};
+
 const getEligibleItemsByVoucher = async (voucher, cart = {}) => {
   const items = Array.isArray(cart.items) ? cart.items : [];
 
@@ -370,7 +390,7 @@ const validateVoucher = async ({ code, user, cart }) => {
     throw new Error("Voucher đã hết lượt sử dụng");
   }
 
-  const userTier = String(user?.membershipTier || "regular").toLowerCase();
+  const userTier = await getUserMembershipTier(user);
   const applicableTiers = Array.isArray(voucher.applicableTiers)
     ? voucher.applicableTiers.map((tier) => String(tier).toLowerCase())
     : [];
@@ -417,9 +437,9 @@ const validateVoucher = async ({ code, user, cart }) => {
 
 const calculateDiscount = (voucher, cart = {}) => {
   const eligibleSubtotal = Number(
-    voucher?.$locals?.eligibleSubtotal ||
-      voucher?._eligibleSubtotal ||
-      cart?.eligibleSubtotal ||
+    voucher?.$locals?.eligibleSubtotal ??
+      voucher?._eligibleSubtotal ??
+      cart?.eligibleSubtotal ??
       0
   );
 
