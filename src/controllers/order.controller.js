@@ -18,12 +18,15 @@ const createOrder = async (req, res) => {
       });
     }
 
-    const order = await orderService.createOrderFromCart(req.user.id, value);
+    const result = await orderService.createOrderFromCart(req.user.id, value);
+    const order = result.order || result;
+    const payment = result.payment || null;
 
     return res.status(201).json({
       message: "Tạo đơn hàng thành công",
       data: {
         order,
+        payment,
         checkout: {
           items: order.items,
           pricing: {

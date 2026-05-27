@@ -236,10 +236,45 @@ totalAmount: {
 
     paymentMethod: {
       type: String,
-      enum: ["cod", "bank_transfer", "momo", "vnpay"],
+      enum: ["cod", "bank_transfer", "momo", "vnpay", "vietqr"],
       required: true,
       default: "cod",
       index: true,
+    },
+
+    paymentProvider: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    paymentOrderCode: {
+      type: Number,
+      default: null,
+      index: true,
+    },
+
+    paymentCheckoutUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    paymentQrCode: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    paymentLinkId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    paidAt: {
+      type: Date,
+      default: null,
     },
 
     paymentStatus: {

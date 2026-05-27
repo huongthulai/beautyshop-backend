@@ -11,6 +11,7 @@
   "author": "lth",
   "license": "ISC",
   "dependencies": {
+    "@payos/node": "^2.0.5",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "body-parser": "^2.2.2",

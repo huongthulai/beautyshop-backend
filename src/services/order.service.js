@@ -6,12 +6,13 @@ const InventoryLog = require("../models/InventoryLog");
 const Payment = require("../models/Payment");
 const Customer = require("../models/Customer");
 const User = require("../models/User");
+const { createPayOSPayment } = require("./payos.service");
 const {
   validateVoucher,
   calculateDiscount,
 } = require("../services/voucher.service");
 
-const PAYMENT_METHODS = ["cod", "bank_transfer", "momo", "vnpay"];
+const PAYMENT_METHODS = ["cod", "bank_transfer", "momo", "vnpay", "vietqr"];
 
 const getActorId = (actor) => {
   if (!actor) return null;
@@ -247,6 +248,21 @@ totalAmount,
     createdBy: user._id,
   });
 
+  let payment = null;
+
+  if (paymentMethod === "vietqr") {
+    payment = await createPayOSPayment({ order });
+
+    order.paymentProvider = "payos";
+    order.paymentOrderCode = payment.paymentOrderCode;
+    order.paymentCheckoutUrl = payment.checkoutUrl;
+    order.paymentQrCode = payment.qrCode;
+    order.paymentLinkId = payment.paymentLinkId || "";
+    order.paymentStatus = "pending";
+
+    await order.save();
+  }
+
   for (const item of orderItems) {
     const inventory = inventoryMap.get(item.productId.toString());
 
@@ -280,12 +296,17 @@ totalAmount,
     orderId: order._id,
     method: paymentMethod,
     amount: totalAmount,
-    status: paymentMethod === "cod" ? "pending" : "pending",
-    transactionId: "",
+    status: "pending",
+    transactionId:
+      paymentMethod === "vietqr" && payment?.paymentOrderCode
+        ? String(payment.paymentOrderCode)
+        : "",
     paidAt: null,
     note:
       paymentMethod === "cod"
         ? "Thanh toán khi nhận hàng"
+        : paymentMethod === "vietqr"
+        ? "Chờ thanh toán VietQR qua payOS"
         : "Chờ xử lý thanh toán online",
     createdBy: user._id,
   });
@@ -304,7 +325,10 @@ totalAmount,
 
   await cart.save();
 
-  return order;
+  return {
+    order,
+    payment,
+  };
 };
 
 const getMyOrders = async (userId) => {

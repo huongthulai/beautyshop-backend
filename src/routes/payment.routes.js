@@ -3,7 +3,9 @@ const paymentController = require("../controllers/payment.controller");
 const { verifyToken } = require("../middlewares/auth.middleware");
 
 const router = express.Router();
+const { handlePayOSWebhook } = require("../controllers/payos.controller");
 
+router.post("/payos-webhook", handlePayOSWebhook);
 // Public callback từ cổng thanh toán
 router.post("/callback", paymentController.paymentCallback);
 

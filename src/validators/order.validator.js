@@ -13,7 +13,7 @@ const shippingAddressSchema = Joi.object({
 const createOrderSchema = Joi.object({
   shippingAddress: shippingAddressSchema.required(),
   paymentMethod: Joi.string()
-    .valid("cod", "bank_transfer", "momo", "vnpay")
+    .valid("cod", "bank_transfer", "momo", "vnpay", "vietqr")
     .optional(),
   shippingFee: Joi.number().min(0).optional(),
   discountAmount: Joi.number().min(0).optional(),
