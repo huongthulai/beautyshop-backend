@@ -6,10 +6,20 @@ const payOS = new PayOS({
   checksumKey: process.env.PAYOS_CHECKSUM_KEY,
 });
 
-const createPayOSPayment = async ({ order }) => {
-  if (!process.env.PAYOS_CLIENT_ID || !process.env.PAYOS_API_KEY || !process.env.PAYOS_CHECKSUM_KEY) {
-    throw new Error("Thiếu cấu hình payOS. Vui lòng kiểm tra PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY trong .env");
+const ensurePayOSConfig = () => {
+  if (
+    !process.env.PAYOS_CLIENT_ID ||
+    !process.env.PAYOS_API_KEY ||
+    !process.env.PAYOS_CHECKSUM_KEY
+  ) {
+    throw new Error(
+      "Thiếu cấu hình payOS. Vui lòng kiểm tra PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY trong .env/Render Environment"
+    );
   }
+};
+
+const createPayOSPayment = async ({ order }) => {
+  ensurePayOSConfig();
 
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3001";
   const paymentOrderCode = Number(String(Date.now()).slice(-10));
@@ -38,10 +48,17 @@ const createPayOSPayment = async ({ order }) => {
 };
 
 const verifyPayOSWebhook = (body) => {
+  ensurePayOSConfig();
   return payOS.webhooks.verify(body);
+};
+
+const getPayOSPaymentInfo = async (orderCode) => {
+  ensurePayOSConfig();
+  return payOS.paymentRequests.getPaymentLinkInformation(Number(orderCode));
 };
 
 module.exports = {
   createPayOSPayment,
   verifyPayOSWebhook,
+  getPayOSPaymentInfo,
 };
