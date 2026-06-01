@@ -54,7 +54,37 @@ const verifyPayOSWebhook = (body) => {
 
 const getPayOSPaymentInfo = async (orderCode) => {
   ensurePayOSConfig();
-  return payOS.paymentRequests.getPaymentLinkInformation(Number(orderCode));
+
+  const paymentOrderCode = Number(orderCode);
+
+  if (!paymentOrderCode) {
+    throw new Error("paymentOrderCode không hợp lệ");
+  }
+
+  const response = await fetch(
+    `https://api-merchant.payos.vn/v2/payment-requests/${paymentOrderCode}`,
+    {
+      method: "GET",
+      headers: {
+        "x-client-id": process.env.PAYOS_CLIENT_ID,
+        "x-api-key": process.env.PAYOS_API_KEY,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  const result = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      result?.desc ||
+        result?.message ||
+        result?.error ||
+        `Không lấy được thông tin thanh toán payOS: ${response.status}`
+    );
+  }
+
+  return result?.data || result;
 };
 
 module.exports = {

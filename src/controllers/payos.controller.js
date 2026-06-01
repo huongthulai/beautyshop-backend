@@ -162,7 +162,10 @@ const syncPayOSPaymentStatus = async (req, res) => {
 
     const isPaid =
       isPayOSPaidStatus(paymentInfo?.status) ||
-      isPayOSPaidStatus(paymentInfo?.data?.status);
+      isPayOSPaidStatus(paymentInfo?.data?.status) ||
+      isPayOSPaidStatus(paymentInfo?.paymentStatus) ||
+      paymentInfo?.code === "00" ||
+      paymentInfo?.data?.code === "00";
 
     if (isPaid) {
       const paidOrder = await markOrderAsPaid(order.paymentOrderCode);
