@@ -3,6 +3,7 @@ const Product = require("../models/Product");
 const Order = require("../models/Order");
 const ChatMessage = require("../models/ChatMessage");
 const ChatKnowledge = require("../models/ChatKnowledge");
+const geminiService = require("./gemini.service");
 
 let Category = null;
 let Brand = null;
@@ -643,7 +644,7 @@ const getPolicyReply = (message) => {
     normalized.includes("momo") ||
     normalized.includes("vnpay")
   ) {
-    return "BeautyShop hiện hỗ trợ thanh toán COD. Nếu shop bật thêm chuyển khoản/MoMo/VNPay, hướng dẫn thanh toán sẽ hiển thị sau khi bạn tạo đơn.";
+    return "BeautyShop hiện hỗ trợ thanh toán COD và VietQR qua payOS. Với COD, bạn thanh toán khi nhận hàng. Với VietQR, hệ thống sẽ hiển thị mã QR sau khi đặt hàng và tự xác nhận khi giao dịch thành công.";
   }
 
   if (normalized.includes("dang nhap") || normalized.includes("tai khoan")) {
@@ -707,6 +708,64 @@ const hasProductIntent = (normalized = "") => {
   return productWords.some((word) => normalized.includes(normalizeText(word)));
 };
 
+/**
+ * Lấy context cho Gemini AI (categories, brands, top products)
+ */
+const getContextForAI = async () => {
+  try {
+    const [categories, brands, topProducts] = await Promise.all([
+      getCategories(),
+      getBrands(),
+      Product.find({ status: "active" })
+        .select("name description categoryId brandId finalPrice originalPrice")
+        .populate("categoryId", "name")
+        .populate("brandId", "name")
+        .limit(10)
+        .lean(),
+    ]);
+
+    return {
+      categories: categories || [],
+      brands: brands || [],
+      products: topProducts || [],
+    };
+  } catch (error) {
+    console.error("[Error getting context for AI]:", error);
+    return { categories: [], brands: [], products: [] };
+  }
+};
+
+/**
+ * Gọi Gemini AI khi không tìm thấy câu trả lời từ knowledge base
+ */
+const getAIResponse = async (message) => {
+  try {
+    if (!geminiService.isAvailable()) {
+      return null;
+    }
+
+    const context = await getContextForAI();
+    const aiResult = await geminiService.generateResponseWithRetry(message, context);
+
+    if (!aiResult.success) {
+      return null;
+    }
+
+    return {
+      intent: "ai_general",
+      status: "ai_answered",
+      reply: aiResult.reply,
+      metadata: {
+        aiProvider: aiResult.aiProvider,
+        model: aiResult.model,
+      },
+    };
+  } catch (error) {
+    console.error("[Error in getAIResponse]:", error);
+    return null;
+  }
+};
+
 const handleChat = async ({ userId = null, sessionId = null, message }) => {
   const text = message?.trim();
 
@@ -740,13 +799,21 @@ const handleChat = async ({ userId = null, sessionId = null, message }) => {
     if (knowledgeReply) {
       result = knowledgeReply;
     } else {
-      result = {
-        intent: "general",
-        status: "need_admin",
-        reply:
-          "Mình chưa chắc câu trả lời chính xác. Bạn có thể hỏi mình theo các mẫu như: “shop có danh mục gì?”, “gợi ý kem chống nắng”, “sản phẩm cho da dầu”, “tra cứu đơn ORD...”, hoặc nhân viên BeautyShop sẽ hỗ trợ bạn sớm nhất nhé.",
-        metadata: {},
-      };
+      // Thử gọi Gemini AI khi không tìm thấy knowledge reply
+      const aiResponse = await getAIResponse(text);
+
+      if (aiResponse) {
+        result = aiResponse;
+      } else {
+        // Fallback: yêu cầu admin hỗ trợ
+        result = {
+          intent: "general",
+          status: "need_admin",
+          reply:
+            "Mình chưa chắc câu trả lời chính xác. Bạn có thể hỏi mình theo các mẫu như: \"shop có danh mục gì?\", \"gợi ý kem chống nắng\", \"sản phẩm cho da dầu\", \"tra cứu đơn ORD...\", hoặc nhân viên BeautyShop sẽ hỗ trợ bạn sớm nhất nhé.",
+          metadata: {},
+        };
+      }
     }
   }
 

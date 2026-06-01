@@ -40,13 +40,13 @@ const chatMessageSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["bot_answered", "need_admin", "admin_answered"],
+      enum: ["bot_answered", "need_admin", "admin_answered", "ai_answered"],
       default: "bot_answered",
       index: true,
     },
     intent: {
       type: String,
-      enum: ["order_lookup", "product_suggestion", "policy", "general"],
+      enum: ["order_lookup", "product_suggestion", "policy", "general", "ai_general"],
       default: "general",
       index: true,
     },
