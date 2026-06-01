@@ -81,6 +81,26 @@ const PRODUCT_KEYWORD_MAP = [
     extraKeywords: ["son", "lipstick", "môi"],
   },
   {
+    keys: ["eyeliner", "eye liner", "ke mat", "but ke mat", "chi ke mat", "ke mat nuoc"],
+    value: "eyeliner",
+    extraKeywords: ["eyeliner", "kẻ mắt", "bút kẻ mắt", "chì kẻ mắt", "kẻ mắt nước"],
+  },
+  {
+    keys: ["mascara", "chuot mi", "mascara chuot mi"],
+    value: "mascara",
+    extraKeywords: ["mascara", "chuốt mi", "mi"],
+  },
+  {
+    keys: ["che khuyet diem", "concealer"],
+    value: "che khuyết điểm",
+    extraKeywords: ["che khuyết điểm", "concealer"],
+  },
+  {
+    keys: ["lam sach", "clean"],
+    value: "làm sạch",
+    extraKeywords: ["làm sạch", "cleanser", "tẩy trang", "sữa rửa mặt"],
+  },
+  {
     keys: ["kem nen", "foundation", "nen"],
     value: "kem nền",
     extraKeywords: ["kem nền", "foundation"],
@@ -644,7 +664,7 @@ const getPolicyReply = (message) => {
     normalized.includes("momo") ||
     normalized.includes("vnpay")
   ) {
-    return "BeautyShop hiện hỗ trợ thanh toán COD và VietQR qua payOS. Với COD, bạn thanh toán khi nhận hàng. Với VietQR, hệ thống sẽ hiển thị mã QR sau khi đặt hàng và tự xác nhận khi giao dịch thành công.";
+    return "BeautyShop hiện hỗ trợ thanh toán COD. Nếu shop bật thêm chuyển khoản/MoMo/VNPay, hướng dẫn thanh toán sẽ hiển thị sau khi bạn tạo đơn.";
   }
 
   if (normalized.includes("dang nhap") || normalized.includes("tai khoan")) {
@@ -690,6 +710,15 @@ const hasProductIntent = (normalized = "") => {
     "mun",
     "son",
     "kem nen",
+    "eyeliner",
+    "eye liner",
+    "ke mat",
+    "but ke mat",
+    "chi ke mat",
+    "mascara",
+    "chuot mi",
+    "che khuyet diem",
+    "concealer",
     "cushion",
     "chong nang",
     "tay trang",
@@ -766,6 +795,15 @@ const getAIResponse = async (message) => {
   }
 };
 
+const hasDirectCatalogMatch = async (message = "") => {
+  const [matchedCategory, matchedBrand] = await Promise.all([
+    findMatchedCategory(message),
+    findMatchedBrand(message),
+  ]);
+
+  return Boolean(matchedCategory || matchedBrand);
+};
+
 const handleChat = async ({ userId = null, sessionId = null, message }) => {
   const text = message?.trim();
 
@@ -784,7 +822,7 @@ const handleChat = async ({ userId = null, sessionId = null, message }) => {
     result = await listCategories();
   } else if (hasBrandIntent(normalized)) {
     result = await listBrands();
-  } else if (hasProductIntent(normalized)) {
+  } else if (hasProductIntent(normalized) || (await hasDirectCatalogMatch(text))) {
     result = await suggestProducts(text);
   } else if (policyReply) {
     result = {
