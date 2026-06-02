@@ -59,7 +59,38 @@ const getOrCreateCustomerFromUser = async (user) => {
 };
 
 const getProductActivePrice = (product) => {
-  return Number(product.finalPrice) || Number(product.originalPrice) || 0;
+  return Number(product.finalPrice) || Number(product.originalPrice) || Number(product.price) || 0;
+};
+
+const getProductImageUrl = (product) => {
+  const firstImage = Array.isArray(product?.images) ? product.images[0] : "";
+  const candidates = [
+    product?.image,
+    product?.thumbnail,
+    firstImage,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+
+    if (typeof candidate === "object") {
+      const imageUrl =
+        candidate.url ||
+        candidate.secure_url ||
+        candidate.path ||
+        candidate.src ||
+        candidate.image ||
+        "";
+
+      if (imageUrl) return imageUrl;
+    }
+  }
+
+  return "";
 };
 
 const validateShippingAddress = (shippingAddress) => {
@@ -130,7 +161,7 @@ const buildOrderItemsFromSelectedCart = async (selectedItems) => {
       productId: product._id,
       sku: product.sku,
       name: product.name,
-      image: Array.isArray(product.images) ? product.images[0] || "" : "",
+      image: getProductImageUrl(product),
       originalPrice: Number(product.originalPrice) || 0,
       salePercent: Number(product.salePercent) || 0,
       finalPrice: unitPrice,
@@ -332,7 +363,10 @@ totalAmount,
 };
 
 const getMyOrders = async (userId) => {
-  const orders = await Order.find({ userId }).sort({ createdAt: -1 });
+  const orders = await Order.find({ userId })
+    .populate("items.productId", "name slug sku image thumbnail images originalPrice finalPrice price")
+    .sort({ createdAt: -1 });
+
   return orders;
 };
 
@@ -343,7 +377,10 @@ const getOrderById = async (userId, orderId, isAdmin = false) => {
     filter.userId = userId;
   }
 
-  const order = await Order.findOne(filter);
+  const order = await Order.findOne(filter).populate(
+    "items.productId",
+    "name slug sku image thumbnail images originalPrice finalPrice price"
+  );
   if (!order) {
     throw new Error("Không tìm thấy đơn hàng");
   }
