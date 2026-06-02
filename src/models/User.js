@@ -19,7 +19,30 @@ const userSchema = new mongoose.Schema(
 
     passwordHash: {
       type: String,
-      required: true,
+      required: function () {
+        return this.authProvider === "local";
+      },
+      default: "",
+    },
+
+    googleId: {
+      type: String,
+      trim: true,
+      default: "",
+      index: true,
+    },
+
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+      index: true,
+    },
+
+    avatar: {
+      type: String,
+      trim: true,
+      default: "",
     },
 
     phone: {
@@ -41,17 +64,18 @@ const userSchema = new mongoose.Schema(
       default: "active",
       index: true,
     },
-    totalSpent: {
-  type: Number,
-  default: 0,
-  min: 0,
-},
 
-membershipTier: {
-  type: String,
-  enum: ["regular", "vip", "vvip"],
-  default: "regular",
-},
+    totalSpent: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    membershipTier: {
+      type: String,
+      enum: ["regular", "vip", "vvip"],
+      default: "regular",
+    },
   },
   { timestamps: true }
 );
